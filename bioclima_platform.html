@@ -1,0 +1,1252 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BioClima Analyzer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+
+  :root {
+    --green: #1a7a4a;
+    --green-light: #2ecc71;
+    --green-pale: #e8f5ee;
+    --yellow: #f39c12;
+    --red: #e74c3c;
+    --blue: #2980b9;
+    --teal: #16a085;
+    --gray-100: #f8f9fa;
+    --gray-200: #e9ecef;
+    --gray-600: #6c757d;
+    --gray-800: #343a40;
+    --white: #ffffff;
+    --shadow: 0 2px 12px rgba(0,0,0,0.08);
+    --radius: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: #f0f4f2;
+    color: var(--gray-800);
+    min-height: 100vh;
+  }
+
+  /* HEADER */
+  header {
+    background: var(--white);
+    border-bottom: 3px solid var(--green);
+    padding: 0 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: var(--shadow);
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .logo-icon {
+    width: 38px; height: 38px;
+    background: var(--green);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+  .logo-text {
+    font-family: 'Space Mono', monospace;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--green);
+    letter-spacing: -0.5px;
+  }
+  .logo-sub {
+    font-size: 11px;
+    color: var(--gray-600);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .header-badge {
+    background: var(--green-pale);
+    color: var(--green);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 20px;
+    letter-spacing: 0.5px;
+  }
+
+  /* MAIN LAYOUT */
+  main {
+    max-width: 1300px;
+    margin: 0 auto;
+    padding: 28px 24px 60px;
+  }
+
+  /* UPLOAD ZONE */
+  .upload-section {
+    background: var(--white);
+    border-radius: var(--radius);
+    padding: 32px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+  }
+  .section-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--gray-800);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-title span { font-size: 18px; }
+
+  .upload-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 700px) { .upload-grid { grid-template-columns: 1fr; } }
+
+  .upload-slot {
+    border: 2px dashed var(--gray-200);
+    border-radius: 10px;
+    padding: 20px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--gray-100);
+    position: relative;
+  }
+  .upload-slot:hover { border-color: var(--green); background: var(--green-pale); }
+  .upload-slot.has-file { border-color: var(--green-light); background: var(--green-pale); border-style: solid; }
+  .upload-slot.dragging { border-color: var(--green); background: var(--green-pale); transform: scale(1.01); }
+  .upload-slot input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .upload-icon { font-size: 28px; margin-bottom: 8px; }
+  .upload-label { font-size: 14px; color: var(--gray-600); font-weight: 500; }
+  .upload-name { font-size: 12px; color: var(--green); font-weight: 600; margin-top: 4px; }
+  .upload-meta { font-size: 11px; color: var(--gray-600); margin-top: 2px; }
+  .upload-slot .remove-btn {
+    position: absolute; top: 8px; right: 10px;
+    background: none; border: none; color: var(--gray-600);
+    font-size: 16px; cursor: pointer; line-height: 1;
+    display: none;
+  }
+  .upload-slot.has-file .remove-btn { display: block; }
+
+  .add-slot-btn {
+    border: 2px dashed var(--gray-200);
+    border-radius: 10px;
+    padding: 20px 16px;
+    text-align: center;
+    cursor: pointer;
+    background: none;
+    color: var(--gray-600);
+    font-size: 13px;
+    font-family: 'DM Sans', sans-serif;
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .add-slot-btn:hover { border-color: var(--green); color: var(--green); background: var(--green-pale); }
+
+  .analyze-btn {
+    margin-top: 20px;
+    background: var(--green);
+    color: var(--white);
+    border: none;
+    border-radius: 8px;
+    padding: 13px 32px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    letter-spacing: 0.3px;
+    transition: background 0.2s;
+  }
+  .analyze-btn:hover { background: #155d38; }
+  .analyze-btn:disabled { background: var(--gray-200); color: var(--gray-600); cursor: not-allowed; }
+
+  /* RESULTS */
+  #results { display: none; }
+
+  /* TABS */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--white);
+    border-radius: var(--radius);
+    padding: 6px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+    flex-wrap: wrap;
+  }
+  .tab-btn {
+    flex: 1;
+    min-width: 120px;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    background: none;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    color: var(--gray-600);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .tab-btn.active { background: var(--green); color: var(--white); }
+  .tab-btn:hover:not(.active) { background: var(--green-pale); color: var(--green); }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* CARDS GRID */
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .card {
+    background: var(--white);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: var(--shadow);
+    border-left: 4px solid var(--green);
+  }
+  .card.yellow { border-color: var(--yellow); }
+  .card.red { border-color: var(--red); }
+  .card.blue { border-color: var(--blue); }
+  .card.teal { border-color: var(--teal); }
+  .card-label { font-size: 11px; color: var(--gray-600); font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
+  .card-value { font-size: 26px; font-weight: 700; color: var(--gray-800); font-family: 'Space Mono', monospace; }
+  .card-unit { font-size: 12px; color: var(--gray-600); margin-top: 2px; }
+  .card-sub { font-size: 11px; margin-top: 6px; padding: 3px 8px; border-radius: 20px; display: inline-block; font-weight: 600; }
+  .badge-good { background: #e8f5ee; color: var(--green); }
+  .badge-moderate { background: #fef9e7; color: var(--yellow); }
+  .badge-bad { background: #fdedec; color: var(--red); }
+  .badge-neutral { background: var(--gray-200); color: var(--gray-600); }
+
+  /* CHART CONTAINER */
+  .chart-box {
+    background: var(--white);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: var(--shadow);
+    margin-bottom: 20px;
+  }
+  .chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .chart-title { font-size: 14px; font-weight: 700; color: var(--gray-800); }
+  .chart-wrap { position: relative; height: 280px; }
+
+  /* TABLE */
+  .table-box {
+    background: var(--white);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: var(--shadow);
+    margin-bottom: 20px;
+    overflow-x: auto;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: var(--gray-100); color: var(--gray-600); font-weight: 700; padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--gray-200); color: var(--gray-800); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--gray-100); }
+
+  /* CONAMA SECTION */
+  .conama-box {
+    background: var(--white);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: var(--shadow);
+    margin-bottom: 20px;
+  }
+  .conama-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+    margin-top: 16px;
+  }
+  .conama-item {
+    border-radius: 10px;
+    padding: 16px;
+    border: 1px solid var(--gray-200);
+  }
+  .conama-item.ok { background: #e8f5ee; border-color: #b2dfcb; }
+  .conama-item.warn { background: #fef9e7; border-color: #f9d776; }
+  .conama-item.bad { background: #fdedec; border-color: #f5b7b1; }
+  .conama-name { font-size: 12px; font-weight: 700; color: var(--gray-800); }
+  .conama-value { font-size: 22px; font-weight: 700; font-family: 'Space Mono', monospace; margin: 4px 0; }
+  .conama-limit { font-size: 11px; color: var(--gray-600); }
+  .conama-status { font-size: 11px; font-weight: 700; margin-top: 6px; }
+  .status-ok { color: var(--green); }
+  .status-warn { color: var(--yellow); }
+  .status-bad { color: var(--red); }
+
+  /* DOWNLOAD BUTTONS */
+  .download-bar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+  .dl-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 18px;
+    border-radius: 8px;
+    border: 2px solid var(--green);
+    background: var(--white);
+    color: var(--green);
+    font-size: 13px;
+    font-weight: 700;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .dl-btn:hover { background: var(--green); color: var(--white); }
+  .dl-btn.primary { background: var(--green); color: var(--white); }
+  .dl-btn.primary:hover { background: #155d38; }
+
+  /* COMPARISON SECTION */
+  .comp-legend {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  .comp-dot {
+    display: inline-block;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    margin-right: 4px;
+  }
+  .legend-item { font-size: 12px; font-weight: 600; display: flex; align-items: center; }
+
+  /* LOADING */
+  .loading {
+    display: none;
+    text-align: center;
+    padding: 40px;
+    color: var(--green);
+    font-weight: 600;
+  }
+  .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid var(--green-pale);
+    border-top-color: var(--green);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* INFO TOOLTIP */
+  .info-chip {
+    display: inline-block;
+    background: var(--gray-100);
+    color: var(--gray-600);
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    margin-left: 6px;
+    cursor: help;
+  }
+
+  .formula-box {
+    background: #f8fffe;
+    border: 1px solid #d0ece4;
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-size: 12px;
+    color: #2c7a55;
+    margin-top: 12px;
+    font-family: 'Space Mono', monospace;
+  }
+
+  /* EMPTY STATE */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--gray-600);
+  }
+  .empty-icon { font-size: 52px; margin-bottom: 12px; }
+  .empty-text { font-size: 15px; font-weight: 600; }
+  .empty-sub { font-size: 13px; margin-top: 4px; }
+
+  /* RESPONSIVE */
+  @media (max-width: 600px) {
+    header { padding: 0 16px; }
+    main { padding: 16px 12px 40px; }
+    .chart-wrap { height: 220px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🌿</div>
+    <div>
+      <div class="logo-text">BioClima Analyzer</div>
+      <div class="logo-sub">Indices Bioclimaticos & Qualidade do Ar</div>
+    </div>
+  </div>
+  <span class="header-badge">v1.0 · CONAMA 491/2018</span>
+</header>
+
+<main>
+
+  <!-- UPLOAD -->
+  <div class="upload-section">
+    <div class="section-title"><span>📂</span> Upload de Arquivos CSV</div>
+    <p style="font-size:13px;color:var(--gray-600);margin-bottom:16px;">
+      Arraste ou clique para carregar arquivos do sensor. Cada arquivo = um tratamento/local. 
+      Comparacoes automaticas entre multiplos arquivos.
+    </p>
+    <div class="upload-grid" id="uploadGrid">
+      <!-- slots inseridos dinamicamente -->
+    </div>
+    <div style="margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+      <button class="analyze-btn" id="analyzeBtn" disabled onclick="runAnalysis()">
+        ▶ Analisar Dados
+      </button>
+      <span id="fileCountBadge" style="font-size:12px;color:var(--gray-600);"></span>
+    </div>
+  </div>
+
+  <!-- LOADING -->
+  <div class="loading" id="loadingDiv">
+    <div class="spinner"></div>
+    Processando dados e calculando indices...
+  </div>
+
+  <!-- RESULTS -->
+  <div id="results">
+
+    <!-- TABS -->
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('resumo')">📊 Resumo Geral</button>
+      <button class="tab-btn" onclick="switchTab('bioclima')">🌡️ Indices Bioclimaticos</button>
+      <button class="tab-btn" onclick="switchTab('ar')">💨 Qualidade do Ar</button>
+      <button class="tab-btn" onclick="switchTab('series')">📈 Series Temporais</button>
+      <button class="tab-btn" onclick="switchTab('comp')">⚖️ Comparacao</button>
+      <button class="tab-btn" onclick="switchTab('tabelas')">📋 Tabelas</button>
+    </div>
+
+    <!-- DOWNLOAD BAR -->
+    <div class="download-bar">
+      <button class="dl-btn primary" onclick="downloadExcel()">⬇ Excel Completo</button>
+      <button class="dl-btn" onclick="downloadChartPNG('chartITC')">🖼 Grafico ITC</button>
+      <button class="dl-btn" onclick="downloadChartPNG('chartPM')">🖼 Grafico PM2.5</button>
+      <button class="dl-btn" onclick="downloadChartPNG('chartSeries')">🖼 Serie Temporal</button>
+    </div>
+
+    <!-- TAB: RESUMO -->
+    <div class="tab-content active" id="tab-resumo">
+      <div class="cards-grid" id="summaryCards"></div>
+      <div class="chart-box">
+        <div class="chart-header">
+          <div class="chart-title">Temperatura e Umidade - Medias por Arquivo</div>
+        </div>
+        <div class="chart-wrap"><canvas id="chartResumo"></canvas></div>
+      </div>
+    </div>
+
+    <!-- TAB: BIOCLIMA -->
+    <div class="tab-content" id="tab-bioclima">
+      <div class="chart-box">
+        <div class="chart-header">
+          <div class="chart-title">Indice de Temperatura e Conforto (ITC) por Arquivo</div>
+        </div>
+        <div class="chart-wrap"><canvas id="chartITC"></canvas></div>
+      </div>
+      <div class="cards-grid" id="bioclimaCards"></div>
+      <div class="table-box">
+        <div class="section-title" style="margin-bottom:12px;"><span>📐</span> Formulas Utilizadas</div>
+        <div class="formula-box">
+          ITU (Indice Temperatura-Umidade) = T - (0.55 - 0.0055*UR) * (T - 14.5)<br>
+          THI (Temperature-Humidity Index) = T + 0.36*Td + 41.2 | Td = T - (100-UR)/5<br>
+          WBGT estimado = 0.567*T + 0.393*ea + 3.94 | ea = (UR/100)*6.105*exp(17.27*T/(237.7+T))<br>
+          Sensacao termica = T + 0.33*ea - 0.70*V - 4.00 (V=0.5 m/s estimado)<br>
+          IT (Indice de calor NOAA): polinomio multivariado T e UR
+        </div>
+        <div style="margin-top:14px;">
+          <table id="bioclimaTable">
+            <thead><tr>
+              <th>Arquivo/Tratamento</th>
+              <th>ITU medio</th>
+              <th>THI medio</th>
+              <th>WBGT medio</th>
+              <th>Sensacao Termica</th>
+              <th>Conforto ITU</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: AR -->
+    <div class="tab-content" id="tab-ar">
+      <div class="conama-box">
+        <div class="section-title"><span>⚖️</span> Comparacao com CONAMA 491/2018</div>
+        <p style="font-size:12px;color:var(--gray-600);margin-top:-6px;margin-bottom:8px;">
+          Limites: PM2.5 media 24h = 25 µg/m³ (Padrao I) | 20 µg/m³ (Padrao II) | PM10 24h = 50 µg/m³
+        </p>
+        <div class="conama-grid" id="conamaGrid"></div>
+      </div>
+      <div class="chart-box">
+        <div class="chart-header">
+          <div class="chart-title">PM2.5 medio por arquivo vs limites CONAMA</div>
+        </div>
+        <div class="chart-wrap"><canvas id="chartPM"></canvas></div>
+      </div>
+      <div class="chart-box">
+        <div class="chart-header">
+          <div class="chart-title">Distribuicao percentual de faixas de PM2.5</div>
+        </div>
+        <div class="chart-wrap"><canvas id="chartPMDist"></canvas></div>
+      </div>
+    </div>
+
+    <!-- TAB: SERIES TEMPORAIS -->
+    <div class="tab-content" id="tab-series">
+      <div style="margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;">
+        <select id="seriesVar" onchange="renderSeriesChart()" style="padding:8px 12px;border-radius:8px;border:1px solid var(--gray-200);font-family:'DM Sans',sans-serif;font-size:13px;">
+          <option value="pm25">PM2.5 (µg/m³)</option>
+          <option value="pm10">PM10 (µg/m³)</option>
+          <option value="temp">Temperatura (°C)</option>
+          <option value="hum">Umidade (%)</option>
+          <option value="co2">CO2 (ppm)</option>
+          <option value="hcho">HCHO (mg/m³)</option>
+          <option value="itu">ITU</option>
+        </select>
+      </div>
+      <div class="chart-box">
+        <div class="chart-header">
+          <div class="chart-title" id="seriesTitle">Serie Temporal - PM2.5</div>
+        </div>
+        <div class="chart-wrap" style="height:320px;"><canvas id="chartSeries"></canvas></div>
+      </div>
+    </div>
+
+    <!-- TAB: COMPARACAO -->
+    <div class="tab-content" id="tab-comp">
+      <div class="chart-box">
+        <div class="chart-header">
+          <div class="chart-title">Radar Bioclimatico - Comparacao entre Tratamentos</div>
+        </div>
+        <div class="chart-wrap"><canvas id="chartRadar"></canvas></div>
+      </div>
+      <div class="chart-box">
+        <div class="chart-header">
+          <div class="chart-title">Box-plot Simplificado: Variacao de PM2.5 por Tratamento</div>
+        </div>
+        <div class="chart-wrap"><canvas id="chartBox"></canvas></div>
+      </div>
+      <div class="table-box">
+        <div class="section-title" style="margin-bottom:12px;"><span>⚖️</span> Tabela Comparativa Completa</div>
+        <table id="compTable">
+          <thead><tr>
+            <th>Parametro</th>
+            <!-- headers dinamicos -->
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB: TABELAS -->
+    <div class="tab-content" id="tab-tabelas">
+      <div id="fullTables"></div>
+    </div>
+
+  </div><!-- /results -->
+
+</main>
+
+<script>
+// ==================== STATE ====================
+let datasets = []; // [{name, rows, stats, bioclima, pm}]
+let charts = {};
+const COLORS = ['#1a7a4a','#2980b9','#e67e22','#9b59b6','#16a085','#c0392b'];
+const COLORS_ALPHA = ['rgba(26,122,74,0.15)','rgba(41,128,185,0.15)','rgba(230,126,18,0.15)','rgba(155,89,182,0.15)'];
+const MAX_SLOTS = 6;
+let slotCount = 2;
+let fileStore = {}; // slot_id -> File
+
+// ==================== UPLOAD SLOTS ====================
+function renderSlots() {
+  const grid = document.getElementById('uploadGrid');
+  grid.innerHTML = '';
+  for (let i = 0; i < slotCount; i++) {
+    const slot = document.createElement('div');
+    slot.className = 'upload-slot' + (fileStore[i] ? ' has-file' : '');
+    slot.id = 'slot_' + i;
+    slot.innerHTML = `
+      <input type="file" accept=".csv" onchange="handleFile(${i}, this)" />
+      <button class="remove-btn" onclick="removeFile(${i})" title="Remover">✕</button>
+      <div class="upload-icon">${fileStore[i] ? '✅' : '📄'}</div>
+      <div class="upload-label">${fileStore[i] ? 'Arquivo carregado' : 'Clique ou arraste o CSV'}</div>
+      ${fileStore[i] ? `<div class="upload-name">${fileStore[i].name}</div>` : `<div class="upload-meta">Formato: sensor CSV padrao</div>`}
+    `;
+    // drag events
+    slot.addEventListener('dragover', e => { e.preventDefault(); slot.classList.add('dragging'); });
+    slot.addEventListener('dragleave', () => slot.classList.remove('dragging'));
+    slot.addEventListener('drop', e => {
+      e.preventDefault(); slot.classList.remove('dragging');
+      const f = e.dataTransfer.files[0];
+      if (f) { fileStore[i] = f; renderSlots(); checkReady(); }
+    });
+    grid.appendChild(slot);
+  }
+  // Add slot button
+  if (slotCount < MAX_SLOTS) {
+    const btn = document.createElement('button');
+    btn.className = 'add-slot-btn';
+    btn.innerHTML = `<span style="font-size:24px;">+</span><span>Adicionar outro arquivo</span>`;
+    btn.onclick = () => { slotCount++; renderSlots(); };
+    grid.appendChild(btn);
+  }
+}
+
+function handleFile(i, input) {
+  if (input.files[0]) { fileStore[i] = input.files[0]; renderSlots(); checkReady(); }
+}
+function removeFile(i) {
+  delete fileStore[i];
+  renderSlots(); checkReady();
+}
+function checkReady() {
+  const count = Object.keys(fileStore).length;
+  document.getElementById('analyzeBtn').disabled = count === 0;
+  document.getElementById('fileCountBadge').textContent = count > 0 ? `${count} arquivo(s) carregado(s)` : '';
+}
+renderSlots();
+
+// ==================== CSV PARSE ====================
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return [];
+  const header = lines[0].split(',').map(h => h.trim());
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const vals = lines[i].split(',');
+    if (vals.length < header.length) continue;
+    const row = {};
+    header.forEach((h, j) => { row[h] = vals[j] ? vals[j].trim() : ''; });
+    // parse numerics
+    row.pm25 = parseFloat(row['PM2.5(ug/m3)']) || 0;
+    row.pm10 = parseFloat(row['PM10(ug/m3)']) || 0;
+    row.co2 = parseFloat(row['CO2(ppm)']) || 0;
+    row.hcho = parseFloat(row['HCHO(mg/m3)']) || 0;
+    row.temp = parseFloat(row['TEMPERATURE']) || 0;
+    row.hum = parseFloat(row['HUMIDITY(%)']) || 0;
+    row.time = new Date(row['DATE']);
+    // bioclima
+    row.itu = calcITU(row.temp, row.hum);
+    row.thi = calcTHI(row.temp, row.hum);
+    row.wbgt = calcWBGT(row.temp, row.hum);
+    row.st = calcST(row.temp, row.hum);
+    rows.push(row);
+  }
+  return rows;
+}
+
+// ==================== INDICES BIOCLIMATICOS ====================
+function calcITU(T, UR) {
+  return T - (0.55 - 0.0055 * UR) * (T - 14.5);
+}
+function calcTHI(T, UR) {
+  const Td = T - (100 - UR) / 5;
+  return T + 0.36 * Td + 41.2;
+}
+function calcWBGT(T, UR) {
+  const ea = (UR / 100) * 6.105 * Math.exp(17.27 * T / (237.7 + T));
+  return 0.567 * T + 0.393 * ea + 3.94;
+}
+function calcST(T, UR) {
+  const ea = (UR / 100) * 6.105 * Math.exp(17.27 * T / (237.7 + T));
+  return T + 0.33 * ea - 0.70 * 0.5 - 4.00;
+}
+function calcHeatIndex(T, UR) {
+  if (T < 27) return T;
+  return -8.78469 + 1.61139 * T + 2.33855 * UR - 0.14611 * T * UR
+    - 0.01230 * T * T - 0.01642 * UR * UR + 0.002211 * T * T * UR
+    + 0.00072546 * T * UR * UR - 0.00000358 * T * T * UR * UR;
+}
+
+function ituComfort(itu) {
+  if (itu < 72) return { label: 'Confortavel', cls: 'badge-good' };
+  if (itu < 79) return { label: 'Ligeiro desconforto', cls: 'badge-moderate' };
+  if (itu < 84) return { label: 'Estresse por calor', cls: 'badge-bad' };
+  return { label: 'Muito estressante', cls: 'badge-bad' };
+}
+function thiComfort(thi) {
+  if (thi < 74) return { label: 'Confortavel', cls: 'badge-good' };
+  if (thi < 79) return { label: 'Atencao', cls: 'badge-moderate' };
+  if (thi < 84) return { label: 'Perigo', cls: 'badge-bad' };
+  return { label: 'Emergencia', cls: 'badge-bad' };
+}
+function wbgtComfort(wbgt) {
+  if (wbgt < 28) return { label: 'Baixo risco', cls: 'badge-good' };
+  if (wbgt < 31) return { label: 'Moderado', cls: 'badge-moderate' };
+  if (wbgt < 35) return { label: 'Alto risco', cls: 'badge-bad' };
+  return { label: 'Muito alto', cls: 'badge-bad' };
+}
+
+// ==================== PM CONAMA ====================
+const CONAMA_PM25_I = 25; // 24h Padrao I
+const CONAMA_PM25_II = 20; // 24h Padrao II
+const CONAMA_PM10_I = 50;
+const CONAMA_PM10_II = 40;
+
+function pmStatus(val, limit1, limit2) {
+  if (val <= limit2) return { cls: 'ok', label: 'Dentro do Padrao II', statusCls: 'status-ok' };
+  if (val <= limit1) return { cls: 'warn', label: 'Entre Padrao I e II', statusCls: 'status-warn' };
+  return { cls: 'bad', label: 'Acima do Padrao I', statusCls: 'status-bad' };
+}
+
+// ==================== STATS ====================
+function stats(arr) {
+  if (!arr.length) return { mean: 0, min: 0, max: 0, p25: 0, p50: 0, p75: 0, sd: 0 };
+  const sorted = [...arr].sort((a, b) => a - b);
+  const n = sorted.length;
+  const mean = arr.reduce((s, v) => s + v, 0) / n;
+  const sd = Math.sqrt(arr.reduce((s, v) => s + (v - mean) ** 2, 0) / n);
+  return {
+    mean: +mean.toFixed(2),
+    min: +sorted[0].toFixed(2),
+    max: +sorted[n - 1].toFixed(2),
+    p25: +sorted[Math.floor(n * 0.25)].toFixed(2),
+    p50: +sorted[Math.floor(n * 0.5)].toFixed(2),
+    p75: +sorted[Math.floor(n * 0.75)].toFixed(2),
+    sd: +sd.toFixed(2)
+  };
+}
+
+// ==================== MAIN ANALYSIS ====================
+async function runAnalysis() {
+  document.getElementById('loadingDiv').style.display = 'block';
+  document.getElementById('results').style.display = 'none';
+  await new Promise(r => setTimeout(r, 50));
+
+  datasets = [];
+  const keys = Object.keys(fileStore).map(Number).sort();
+
+  for (const k of keys) {
+    const file = fileStore[k];
+    const text = await file.text();
+    const rows = parseCSV(text);
+    if (!rows.length) continue;
+    const name = file.name.replace('.csv', '');
+    const ds = {
+      name,
+      rows,
+      stats: {
+        pm25: stats(rows.map(r => r.pm25)),
+        pm10: stats(rows.map(r => r.pm10)),
+        temp: stats(rows.map(r => r.temp)),
+        hum: stats(rows.map(r => r.hum)),
+        co2: stats(rows.map(r => r.co2)),
+        hcho: stats(rows.map(r => r.hcho)),
+        itu: stats(rows.map(r => r.itu)),
+        thi: stats(rows.map(r => r.thi)),
+        wbgt: stats(rows.map(r => r.wbgt)),
+        st: stats(rows.map(r => r.st)),
+      }
+    };
+    datasets.push(ds);
+  }
+
+  document.getElementById('loadingDiv').style.display = 'none';
+  document.getElementById('results').style.display = 'block';
+
+  renderSummary();
+  renderBioclima();
+  renderAR();
+  renderSeriesChart();
+  renderComparison();
+  renderTabelas();
+  destroyCharts();
+  renderAllCharts();
+}
+
+// ==================== SUMMARY TAB ====================
+function renderSummary() {
+  const c = document.getElementById('summaryCards');
+  c.innerHTML = '';
+  datasets.forEach((ds, i) => {
+    const color = ['','yellow','blue','teal','red',''][i % 6];
+    c.innerHTML += `
+      <div class="card ${color}">
+        <div class="card-label">${ds.name}</div>
+        <div class="card-value">${ds.stats.temp.mean.toFixed(1)}°C</div>
+        <div class="card-unit">Temperatura media</div>
+        <div class="card-sub badge-neutral">UR: ${ds.stats.hum.mean.toFixed(1)}% | n=${ds.rows.length}</div>
+      </div>`;
+  });
+}
+
+// ==================== BIOCLIMA TAB ====================
+function renderBioclima() {
+  const c = document.getElementById('bioclimaCards');
+  c.innerHTML = '';
+  datasets.forEach((ds, i) => {
+    const itu = ituComfort(ds.stats.itu.mean);
+    const thi = thiComfort(ds.stats.thi.mean);
+    const wbgt = wbgtComfort(ds.stats.wbgt.mean);
+    c.innerHTML += `
+      <div class="card ${['','yellow','blue','teal','red',''][i%6]}">
+        <div class="card-label">${ds.name}</div>
+        <div class="card-value">${ds.stats.itu.mean.toFixed(1)}</div>
+        <div class="card-unit">ITU medio</div>
+        <div class="card-sub ${itu.cls}">${itu.label}</div>
+      </div>`;
+  });
+
+  // Table
+  const tbody = document.querySelector('#bioclimaTable tbody');
+  tbody.innerHTML = '';
+  datasets.forEach(ds => {
+    const itu = ituComfort(ds.stats.itu.mean);
+    tbody.innerHTML += `<tr>
+      <td><strong>${ds.name}</strong></td>
+      <td>${ds.stats.itu.mean.toFixed(2)}</td>
+      <td>${ds.stats.thi.mean.toFixed(2)}</td>
+      <td>${ds.stats.wbgt.mean.toFixed(2)}</td>
+      <td>${ds.stats.st.mean.toFixed(2)}</td>
+      <td><span class="card-sub ${itu.cls}">${itu.label}</span></td>
+    </tr>`;
+  });
+}
+
+// ==================== AR TAB ====================
+function renderAR() {
+  const grid = document.getElementById('conamaGrid');
+  grid.innerHTML = '';
+  datasets.forEach((ds, i) => {
+    const pm25 = ds.stats.pm25.mean;
+    const pm10 = ds.stats.pm10.mean;
+    const s25 = pmStatus(pm25, CONAMA_PM25_I, CONAMA_PM25_II);
+    const s10 = pmStatus(pm10, CONAMA_PM10_I, CONAMA_PM10_II);
+    grid.innerHTML += `
+      <div class="conama-item ${s25.cls}">
+        <div class="conama-name">📍 ${ds.name} — PM2.5</div>
+        <div class="conama-value">${pm25.toFixed(1)} <small style="font-size:14px;">µg/m³</small></div>
+        <div class="conama-limit">Limite Padrao I: ${CONAMA_PM25_I} | Padrao II: ${CONAMA_PM25_II} µg/m³</div>
+        <div class="conama-status ${s25.statusCls}">◉ ${s25.label}</div>
+      </div>
+      <div class="conama-item ${s10.cls}">
+        <div class="conama-name">📍 ${ds.name} — PM10</div>
+        <div class="conoma-value" style="font-size:22px;font-weight:700;font-family:'Space Mono',monospace;margin:4px 0;">${pm10.toFixed(1)} <small style="font-size:14px;">µg/m³</small></div>
+        <div class="conama-limit">Limite Padrao I: ${CONAMA_PM10_I} | Padrao II: ${CONAMA_PM10_II} µg/m³</div>
+        <div class="conama-status ${s10.statusCls}">◉ ${s10.label}</div>
+      </div>`;
+  });
+}
+
+// ==================== RENDER ALL CHARTS ====================
+function destroyCharts() {
+  Object.values(charts).forEach(ch => { try { ch.destroy(); } catch (e) {} });
+  charts = {};
+}
+
+function renderAllCharts() {
+  // Resumo: temp e umidade
+  charts.resumo = new Chart(document.getElementById('chartResumo'), {
+    type: 'bar',
+    data: {
+      labels: datasets.map(d => d.name),
+      datasets: [
+        {
+          label: 'Temperatura media (°C)',
+          data: datasets.map(d => d.stats.temp.mean),
+          backgroundColor: COLORS.map(c => c + 'cc'),
+          borderColor: COLORS,
+          borderWidth: 2,
+          borderRadius: 6,
+          yAxisID: 'y'
+        },
+        {
+          label: 'Umidade media (%)',
+          data: datasets.map(d => d.stats.hum.mean),
+          backgroundColor: 'rgba(41,128,185,0.25)',
+          borderColor: '#2980b9',
+          borderWidth: 2,
+          type: 'line',
+          yAxisID: 'y2',
+          tension: 0.4,
+          pointRadius: 6
+        }
+      ]
+    },
+    options: chartOpts('Temperatura (°C)', 'Umidade (%)', true)
+  });
+
+  // ITC
+  charts.itc = new Chart(document.getElementById('chartITC'), {
+    type: 'bar',
+    data: {
+      labels: datasets.map(d => d.name),
+      datasets: [
+        { label: 'ITU', data: datasets.map(d => d.stats.itu.mean), backgroundColor: COLORS[0]+'cc', borderColor: COLORS[0], borderWidth: 2, borderRadius: 6 },
+        { label: 'THI', data: datasets.map(d => d.stats.thi.mean), backgroundColor: COLORS[1]+'cc', borderColor: COLORS[1], borderWidth: 2, borderRadius: 6 },
+        { label: 'WBGT', data: datasets.map(d => d.stats.wbgt.mean), backgroundColor: COLORS[2]+'cc', borderColor: COLORS[2], borderWidth: 2, borderRadius: 6 },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top' }, annotation: {} },
+      scales: {
+        y: { beginAtZero: false, grid: { color: '#f0f0f0' }, ticks: { font: { size: 12 } } },
+        x: { ticks: { font: { size: 12 } } }
+      }
+    }
+  });
+
+  // PM chart
+  charts.pm = new Chart(document.getElementById('chartPM'), {
+    type: 'bar',
+    data: {
+      labels: datasets.map(d => d.name),
+      datasets: [
+        { label: 'PM2.5 medio (µg/m³)', data: datasets.map(d => d.stats.pm25.mean), backgroundColor: COLORS.map(c => c + 'cc'), borderColor: COLORS, borderWidth: 2, borderRadius: 6 },
+        { label: 'PM10 medio (µg/m³)', data: datasets.map(d => d.stats.pm10.mean), backgroundColor: COLORS.map((c,i) => COLORS[(i+2)%6]+'88'), borderColor: COLORS.map((c,i) => COLORS[(i+2)%6]), borderWidth: 2, borderRadius: 6 },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top' },
+        annotation: {
+          annotations: {
+            limit1: { type: 'line', yMin: CONAMA_PM25_I, yMax: CONAMA_PM25_I, borderColor: '#e74c3c', borderWidth: 2, borderDash: [6, 4], label: { content: 'CONAMA PM2.5 Padrao I', display: true, position: 'start', backgroundColor: '#e74c3c22', color: '#e74c3c', font: { size: 11 } } },
+            limit2: { type: 'line', yMin: CONAMA_PM25_II, yMax: CONAMA_PM25_II, borderColor: '#f39c12', borderWidth: 2, borderDash: [6, 4], label: { content: 'CONAMA PM2.5 Padrao II', display: true, position: 'start', backgroundColor: '#f39c1222', color: '#f39c12', font: { size: 11 } } }
+          }
+        }
+      },
+      scales: {
+        y: { beginAtZero: true, grid: { color: '#f0f0f0' }, ticks: { font: { size: 12 } } },
+        x: { ticks: { font: { size: 12 } } }
+      }
+    }
+  });
+
+  // PM Distribution (pie per dataset)
+  const pmCategories = datasets.map(ds => {
+    const rows = ds.rows;
+    const good = rows.filter(r => r.pm25 <= CONAMA_PM25_II).length;
+    const mod = rows.filter(r => r.pm25 > CONAMA_PM25_II && r.pm25 <= CONAMA_PM25_I).length;
+    const bad = rows.filter(r => r.pm25 > CONAMA_PM25_I).length;
+    return [good, mod, bad];
+  });
+  charts.pmDist = new Chart(document.getElementById('chartPMDist'), {
+    type: 'bar',
+    data: {
+      labels: datasets.map(d => d.name),
+      datasets: [
+        { label: 'Dentro Padrao II (≤20)', data: pmCategories.map(d => d[0]), backgroundColor: '#1a7a4acc', borderColor: '#1a7a4a', borderWidth: 2, borderRadius: 4 },
+        { label: 'Entre Padrao I e II (20-25)', data: pmCategories.map(d => d[1]), backgroundColor: '#f39c12cc', borderColor: '#f39c12', borderWidth: 2, borderRadius: 4 },
+        { label: 'Acima Padrao I (>25)', data: pmCategories.map(d => d[2]), backgroundColor: '#e74c3ccc', borderColor: '#e74c3c', borderWidth: 2, borderRadius: 4 },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top' } },
+      scales: {
+        x: { stacked: true, ticks: { font: { size: 12 } } },
+        y: { stacked: true, grid: { color: '#f0f0f0' }, ticks: { font: { size: 12 } }, title: { display: true, text: 'Numero de medicoes' } }
+      }
+    }
+  });
+
+  // Radar
+  charts.radar = new Chart(document.getElementById('chartRadar'), {
+    type: 'radar',
+    data: {
+      labels: ['Temp media', 'Umidade', 'ITU', 'PM2.5', 'PM10', 'CO2 (÷10)'],
+      datasets: datasets.map((ds, i) => ({
+        label: ds.name,
+        data: [
+          ds.stats.temp.mean,
+          ds.stats.hum.mean / 2,
+          ds.stats.itu.mean,
+          ds.stats.pm25.mean * 2,
+          ds.stats.pm10.mean,
+          ds.stats.co2.mean / 10
+        ],
+        borderColor: COLORS[i % COLORS.length],
+        backgroundColor: COLORS_ALPHA[i % COLORS_ALPHA.length],
+        borderWidth: 2, pointRadius: 4
+      }))
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top' } },
+      scales: { r: { ticks: { font: { size: 10 } }, pointLabels: { font: { size: 11 } } } }
+    }
+  });
+
+  // Box-like chart: min, p25, median, p75, max for PM2.5
+  charts.box = new Chart(document.getElementById('chartBox'), {
+    type: 'bar',
+    data: {
+      labels: datasets.map(d => d.name),
+      datasets: [
+        { label: 'Min', data: datasets.map(d => d.stats.pm25.min), backgroundColor: 'transparent', borderColor: 'transparent', stack: 'box' },
+        { label: 'P25', data: datasets.map(d => d.stats.pm25.p25 - d.stats.pm25.min), backgroundColor: 'rgba(26,122,74,0.2)', borderColor: 'transparent', stack: 'box', borderRadius: 0 },
+        { label: 'Mediana (IQR)', data: datasets.map(d => d.stats.pm25.p75 - d.stats.pm25.p25), backgroundColor: 'rgba(26,122,74,0.6)', borderColor: '#1a7a4a', borderWidth: 2, stack: 'box', borderRadius: 0 },
+        { label: 'P75-Max', data: datasets.map(d => d.stats.pm25.max - d.stats.pm25.p75), backgroundColor: 'rgba(26,122,74,0.15)', borderColor: 'transparent', stack: 'box', borderRadius: 0 },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top' } },
+      scales: {
+        x: { stacked: true, ticks: { font: { size: 12 } } },
+        y: { stacked: true, grid: { color: '#f0f0f0' }, title: { display: true, text: 'PM2.5 (µg/m³)' }, ticks: { font: { size: 12 } } }
+      }
+    }
+  });
+
+  renderSeriesChart();
+}
+
+function chartOpts(yLabel, y2Label, dual) {
+  const scales = {
+    y: { beginAtZero: false, grid: { color: '#f0f0f0' }, title: { display: true, text: yLabel }, ticks: { font: { size: 12 } } },
+    x: { ticks: { font: { size: 12 } } }
+  };
+  if (dual) scales.y2 = { beginAtZero: false, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: y2Label }, ticks: { font: { size: 12 } } };
+  return { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales };
+}
+
+// ==================== SERIES TEMPORAL ====================
+function renderSeriesChart() {
+  const varKey = document.getElementById('seriesVar').value;
+  const titles = { pm25:'PM2.5 (µg/m³)', pm10:'PM10 (µg/m³)', temp:'Temperatura (°C)', hum:'Umidade (%)', co2:'CO2 (ppm)', hcho:'HCHO (mg/m³)', itu:'ITU' };
+  document.getElementById('seriesTitle').textContent = 'Serie Temporal - ' + titles[varKey];
+
+  if (charts.series) { charts.series.destroy(); delete charts.series; }
+
+  // Sample max 200 points per dataset for performance
+  const sample = (arr) => {
+    if (arr.length <= 200) return arr;
+    const step = Math.ceil(arr.length / 200);
+    return arr.filter((_, i) => i % step === 0);
+  };
+
+  const getVal = (row, key) => {
+    if (key === 'itu') return row.itu;
+    return row[key];
+  };
+
+  charts.series = new Chart(document.getElementById('chartSeries'), {
+    type: 'line',
+    data: {
+      datasets: datasets.map((ds, i) => {
+        const sampled = sample(ds.rows);
+        return {
+          label: ds.name,
+          data: sampled.map(r => ({ x: r.time, y: getVal(r, varKey) })),
+          borderColor: COLORS[i % COLORS.length],
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.2
+        };
+      })
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top' } },
+      scales: {
+        x: { type: 'time', time: { displayFormats: { minute: 'HH:mm', hour: 'HH:mm' } }, ticks: { font: { size: 11 } } },
+        y: { grid: { color: '#f0f0f0' }, ticks: { font: { size: 12 } } }
+      }
+    }
+  });
+}
+
+// ==================== COMPARISON TABLE ====================
+function renderComparison() {
+  const tbl = document.getElementById('compTable');
+  const thead = tbl.querySelector('thead tr');
+  const tbody = tbl.querySelector('tbody');
+
+  thead.innerHTML = '<th>Parametro</th>';
+  datasets.forEach(ds => thead.innerHTML += `<th>${ds.name}</th>`);
+
+  const params = [
+    { key: 'temp', label: 'Temperatura media (°C)' },
+    { key: 'hum', label: 'Umidade media (%)' },
+    { key: 'pm25', label: 'PM2.5 media (µg/m³)' },
+    { key: 'pm10', label: 'PM10 media (µg/m³)' },
+    { key: 'co2', label: 'CO2 medio (ppm)' },
+    { key: 'hcho', label: 'HCHO medio (mg/m³)' },
+    { key: 'itu', label: 'ITU medio' },
+    { key: 'thi', label: 'THI medio' },
+    { key: 'wbgt', label: 'WBGT medio' },
+    { key: 'st', label: 'Sensacao Termica' },
+  ];
+  const extras = [
+    { label: 'PM2.5 minimo', fn: ds => ds.stats.pm25.min },
+    { label: 'PM2.5 maximo', fn: ds => ds.stats.pm25.max },
+    { label: 'PM2.5 mediana', fn: ds => ds.stats.pm25.p50 },
+    { label: 'PM2.5 DP', fn: ds => ds.stats.pm25.sd },
+    { label: 'Temp minima (°C)', fn: ds => ds.stats.temp.min },
+    { label: 'Temp maxima (°C)', fn: ds => ds.stats.temp.max },
+    { label: 'N medicoes', fn: ds => ds.rows.length },
+  ];
+
+  tbody.innerHTML = '';
+  params.forEach(p => {
+    let row = `<tr><td><strong>${p.label}</strong></td>`;
+    datasets.forEach(ds => row += `<td>${ds.stats[p.key].mean.toFixed(2)}</td>`);
+    row += '</tr>'; tbody.innerHTML += row;
+  });
+  extras.forEach(p => {
+    let row = `<tr><td>${p.label}</td>`;
+    datasets.forEach(ds => row += `<td>${p.fn(ds)}</td>`);
+    row += '</tr>'; tbody.innerHTML += row;
+  });
+}
+
+// ==================== TABELAS COMPLETAS ====================
+function renderTabelas() {
+  const div = document.getElementById('fullTables');
+  div.innerHTML = '';
+  datasets.forEach(ds => {
+    div.innerHTML += `
+      <div class="table-box">
+        <div class="section-title" style="margin-bottom:12px;"><span>📋</span> ${ds.name} — Estatisticas Detalhadas</div>
+        <table>
+          <thead><tr><th>Variavel</th><th>Media</th><th>Min</th><th>Max</th><th>Mediana</th><th>P25</th><th>P75</th><th>DP</th></tr></thead>
+          <tbody>
+            ${renderStatRow('Temperatura (°C)', ds.stats.temp)}
+            ${renderStatRow('Umidade (%)', ds.stats.hum)}
+            ${renderStatRow('PM2.5 (µg/m³)', ds.stats.pm25)}
+            ${renderStatRow('PM10 (µg/m³)', ds.stats.pm10)}
+            ${renderStatRow('CO2 (ppm)', ds.stats.co2)}
+            ${renderStatRow('HCHO (mg/m³)', ds.stats.hcho)}
+            ${renderStatRow('ITU', ds.stats.itu)}
+            ${renderStatRow('THI', ds.stats.thi)}
+            ${renderStatRow('WBGT', ds.stats.wbgt)}
+            ${renderStatRow('Sensacao Termica', ds.stats.st)}
+          </tbody>
+        </table>
+      </div>`;
+  });
+}
+function renderStatRow(label, s) {
+  return `<tr><td><strong>${label}</strong></td><td>${s.mean}</td><td>${s.min}</td><td>${s.max}</td><td>${s.p50}</td><td>${s.p25}</td><td>${s.p75}</td><td>${s.sd}</td></tr>`;
+}
+
+// ==================== TABS ====================
+function switchTab(id) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.querySelector(`#tab-${id}`).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// ==================== DOWNLOADS ====================
+function downloadChartPNG(canvasId) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const link = document.createElement('a');
+  link.download = canvasId + '_bioclima.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+function downloadExcel() {
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1: Resumo comparativo
+  const compRows = [['Parametro', ...datasets.map(d => d.name)]];
+  const params = [
+    ['Temperatura media (C)', d => d.stats.temp.mean],
+    ['Umidade media (%)', d => d.stats.hum.mean],
+    ['PM2.5 media (ug/m3)', d => d.stats.pm25.mean],
+    ['PM2.5 minimo', d => d.stats.pm25.min],
+    ['PM2.5 maximo', d => d.stats.pm25.max],
+    ['PM2.5 mediana', d => d.stats.pm25.p50],
+    ['PM2.5 DP', d => d.stats.pm25.sd],
+    ['PM10 media (ug/m3)', d => d.stats.pm10.mean],
+    ['CO2 medio (ppm)', d => d.stats.co2.mean],
+    ['HCHO medio (mg/m3)', d => d.stats.hcho.mean],
+    ['ITU medio', d => d.stats.itu.mean],
+    ['THI medio', d => d.stats.thi.mean],
+    ['WBGT medio', d => d.stats.wbgt.mean],
+    ['Sensacao Termica', d => d.stats.st.mean],
+    ['N medicoes', d => d.rows.length],
+    ['PM2.5 CONAMA I (25 ug/m3)', () => CONAMA_PM25_I],
+    ['PM2.5 CONAMA II (20 ug/m3)', () => CONAMA_PM25_II],
+  ];
+  params.forEach(([label, fn]) => compRows.push([label, ...datasets.map(fn)]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(compRows), 'Resumo_Comparativo');
+
+  // Sheet per dataset: raw + indices
+  datasets.forEach(ds => {
+    const header = ['DATE','Temp(C)','Umidade(%)','PM2.5(ug/m3)','PM10(ug/m3)','CO2(ppm)','HCHO(mg/m3)','ITU','THI','WBGT','Sensacao_Termica'];
+    const rows = [header, ...ds.rows.map(r => [
+      r['DATE'] || r.time.toISOString(),
+      r.temp, r.hum, r.pm25, r.pm10, r.co2, r.hcho,
+      +r.itu.toFixed(2), +r.thi.toFixed(2), +r.wbgt.toFixed(2), +r.st.toFixed(2)
+    ])];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), ds.name.slice(0, 30));
+  });
+
+  // Sheet CONAMA
+  const conamaRows = [
+    ['Poluente', 'Padrao', 'Limite (ug/m3)', 'Resolucao CONAMA'],
+    ['PM2.5', 'Padrao I (24h)', 25, '491/2018'],
+    ['PM2.5', 'Padrao II (24h)', 20, '491/2018'],
+    ['PM10', 'Padrao I (24h)', 50, '491/2018'],
+    ['PM10', 'Padrao II (24h)', 40, '491/2018'],
+    [], ['Arquivo', 'PM2.5 medio', 'Status PM2.5', 'PM10 medio', 'Status PM10'],
+    ...datasets.map(ds => {
+      const s25 = pmStatus(ds.stats.pm25.mean, CONAMA_PM25_I, CONAMA_PM25_II);
+      const s10 = pmStatus(ds.stats.pm10.mean, CONAMA_PM10_I, CONAMA_PM10_II);
+      return [ds.name, ds.stats.pm25.mean, s25.label, ds.stats.pm10.mean, s10.label];
+    })
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(conamaRows), 'CONAMA_491_2018');
+
+  XLSX.writeFile(wb, 'bioclima_analise.xlsx');
+}
+</script>
+
+<!-- Chart.js time adapter -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/luxon/3.4.4/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+
+</body>
+</html>
