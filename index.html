@@ -621,31 +621,59 @@ renderSlots();
 function parseCSV(text, startH, endH) {
   const lines = text.split(/\r?\n/).filter(l => l.trim());
   if (lines.length < 2) return [];
-  const hdr = lines[0].split(',').map(h => h.trim());
+
+  // Detect delimiter: semicolon or comma
+  const delim = lines[0].includes(';') ? ';' : ',';
+  const rawHdr = lines[0].split(delim).map(h => h.trim().replace(/;$/, ''));
+
+  // Detect if date and time are in separate columns (semicolon files have DATE + time as col[1])
+  // Format: DATE=dd/mm/yyyy, col[1]=HH:MM:SS — data cols shift by 1
+  const splitDateTime = delim === ';' && /^\d{2}\/\d{2}\/\d{4}$/.test(
+    lines[1] ? lines[1].split(delim)[0].trim() : ''
+  );
+
+  // Build effective header: if splitDateTime, insert a synthetic TIME header at index 1
+  const hdr = splitDateTime
+    ? ['DATE', 'TIME', ...rawHdr.slice(1)]
+    : rawHdr;
+
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
-    const vals = lines[i].split(',');
-    if (vals.length < hdr.length) continue;
+    const vals = lines[i].split(delim).map(v => v.trim());
+    if (vals.length < hdr.length - 1) continue;
+
     const row = {};
-    hdr.forEach((h, j) => row[h] = (vals[j]||'').trim());
-    const t = new Date(row['DATE']);
-    if (isNaN(t)) continue;
+    hdr.forEach((h, j) => { row[h] = (vals[j] || '').trim(); });
+
+    // Parse datetime
+    let t;
+    if (splitDateTime) {
+      // dd/mm/yyyy HH:MM:SS
+      const [dd, mm, yyyy] = row['DATE'].split('/');
+      t = new Date(`${yyyy}-${mm}-${dd}T${row['TIME']}`);
+    } else {
+      t = new Date(row['DATE']);
+    }
+    if (!t || isNaN(t)) continue;
+
     const h = t.getHours(), m = t.getMinutes();
     const hm = h * 60 + m;
+
     // time filter
     if (startH !== null && endH !== null) {
       const sHM = startH[0] * 60 + startH[1];
       const eHM = endH[0] * 60 + endH[1];
       if (hm < sHM || hm > eHM) continue;
     }
+
     row.time = t;
     row.hour = h;
     row.pm25 = parseFloat(row['PM2.5(ug/m3)']) || 0;
     row.pm10 = parseFloat(row['PM10(ug/m3)']) || 0;
-    row.co2  = parseFloat(row['CO2(ppm)']) || 0;
-    row.hcho = parseFloat(row['HCHO(mg/m3)']) || 0;
-    row.temp = parseFloat(row['TEMPERATURE']) || 0;
-    row.hum  = parseFloat(row['HUMIDITY(%)']) || 0;
+    row.co2  = parseFloat(row['CO2(ppm)'])     || 0;
+    row.hcho = parseFloat(row['HCHO(mg/m3)'])  || 0;
+    row.temp = parseFloat(row['TEMPERATURE'])   || 0;
+    row.hum  = parseFloat(row['HUMIDITY(%)'])   || 0;
     row.itu  = calcITU(row.temp, row.hum);
     row.thi  = calcTHI(row.temp, row.hum);
     row.wbgt = calcWBGT(row.temp, row.hum);
