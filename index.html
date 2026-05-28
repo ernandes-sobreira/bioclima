@@ -807,6 +807,18 @@ function toggleTF() {
 renderSlots();
 
 // ============================================================
+// TOAST (defined early so runAnalysis can use it)
+// ============================================================
+function showToast(msg, dur=3500) {
+  const el = document.getElementById('toast');
+  if (!el) { console.warn(msg); return; }
+  el.textContent = msg;
+  el.style.display = 'block';
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => el.style.display='none', dur);
+}
+
+// ============================================================
 // CSV PARSE
 // ============================================================
 function parseCSV(text, startH, endH) {
@@ -815,25 +827,25 @@ function parseCSV(text, startH, endH) {
 
   const delim = lines[0].includes(';') ? ';' : ',';
 
-  // Normalize header label to a clean uppercase key
+  // Normalize column header to clean uppercase key
   const norm = h => h.trim()
-    .replace(/[\xb5\u00b5]/g,'u').replace(/[\xb3\u00b3]/g,'3')
-    .replace(/[\xb0\u00b0]/g,'').replace(/\s*\(.*?\)/g,'')
-    .replace(/\s+/g,'_').replace(/[^A-Z0-9_.]/gi,'').toUpperCase();
+    .replace(/[\xb5\u00b5]/g,'u')
+    .replace(/[\xb3\u00b3]/g,'3')
+    .replace(/[\xb0\u00b0]/g,'')
+    .replace(/\s*\(.*?\)/g,'')
+    .replace(/\s+/g,'_')
+    .replace(/[^A-Z0-9_.]/gi,'')
+    .toUpperCase();
 
-  const rawHdr  = lines[0].split(delim);
-  const normHdr = rawHdr.map(norm);
+  const normHdr = lines[0].split(delim).map(norm);
 
-  // Detect split date+time cols: dd/mm/yyyy in date col, AND a separate time col exists
-  const firstDataVal = (lines[1]||'').split(delim)[idxDate>=0?idxDate:0].trim();
-  const splitDateTime = delim === ';' && /^\d{2}\/\d{2}\/\d{4}$/.test(firstDataVal) && idxTime >= 0;
-
-  // Find index of first matching candidate
+  // Find first matching column index
   const colIdx = (...cands) => {
-    for (const c of cands) { const i = normHdr.indexOf(c); if (i>=0) return i; }
+    for (const c of cands) { const i = normHdr.indexOf(c); if (i >= 0) return i; }
     return -1;
   };
 
+  // Declare ALL indices first before using them
   const idxDate = colIdx('DATA','DATE');
   const idxTime = colIdx('HORA','TIME');
   const idxPM25 = colIdx('PM25','PM2_5','PM2.5');
@@ -843,24 +855,33 @@ function parseCSV(text, startH, endH) {
   const idxTemp = colIdx('TEMPERATURA','TEMPERATURE','TEMP');
   const idxHum  = colIdx('UMIDADE','HUMIDITY');
 
-  // Shift data col indices when unlabeled time col is inserted after DATE
+  // Now safe to use idxDate
+  const dateCol     = idxDate >= 0 ? idxDate : 0;
+  const firstData   = (lines[1]||'').split(delim);
+  const firstDateV  = (firstData[dateCol]||'').trim();
+  const nextV       = (firstData[dateCol + 1]||'').trim();
+  const dateIsDMY   = /^\d{2}\/\d{2}\/\d{4}$/.test(firstDateV);
+  const nextIsTime  = /^\d{2}:\d{2}:\d{2}$/.test(nextV);
+  const splitDateTime = delim === ';' && dateIsDMY && (idxTime >= 0 || nextIsTime);
+  const effectiveTimeIdx = idxTime >= 0 ? idxTime : (nextIsTime ? dateCol + 1 : -1);
+  // Shift data cols when time col is unlabeled (inserted between DATE and data)
   const dataShift = (splitDateTime && idxTime < 0 && nextIsTime) ? 1 : 0;
-  const dIdx = i => (i > (idxDate >= 0 ? idxDate : 0) && i >= 0) ? i + dataShift : i;
+  const dIdx = i => (i > dateCol && i >= 0) ? i + dataShift : i;
 
   const pf = s => parseFloat((s||'0').trim().replace(',','.')) || 0;
-  const gc = (vals, i) => i>=0 ? (vals[i]||'').trim() : '0';
+  const gc = (vals, i) => i >= 0 ? (vals[i]||'').trim() : '0';
 
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
     const vals = lines[i].split(delim);
     if (vals.length < 3) continue;
 
-    // Parse datetime
     let t;
     if (splitDateTime) {
-      const dp = gc(vals, idxDate), tp = gc(vals, effectiveTimeIdx);
+      const dp = gc(vals, idxDate);
+      const tp = gc(vals, effectiveTimeIdx);
       if (dp.includes('/')) {
-        const [dd,mm,yyyy] = dp.split('/');
+        const [dd, mm, yyyy] = dp.split('/');
         t = new Date(`${yyyy}-${mm}-${dd}T${tp}`);
       } else {
         t = new Date(`${dp}T${tp}`);
