@@ -939,7 +939,13 @@ async function runAnalysis() {
   const keys = Object.keys(fileStore).map(Number).sort();
   for (const k of keys) {
     const file = fileStore[k];
-    const text = await file.text();
+    // Read with latin1 to handle µ (\xb5) and ° (\xb0) from sensor exports
+    const text = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target.result);
+      reader.onerror = reject;
+      reader.readAsText(file, 'windows-1252');
+    });
     const rows = parseCSV(text, startH, endH);
     if (!rows.length) continue;
     const name = file.name.replace(/\.csv$/i,'');
