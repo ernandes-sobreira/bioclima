@@ -2176,295 +2176,287 @@ function renderByDay() {
   const vis = visDS();
   if (!vis.length) return;
 
-  const mean = arr => arr.length ? +(arr.reduce((s,v)=>s+v,0)/arr.length).toFixed(2) : null;
-  const HOURS = Array.from({length:24},(_,i)=>i);
+  // Stats helpers
+  const vmean = arr => arr.length ? arr.reduce((s,v)=>s+v,0)/arr.length : null;
+  const vsd   = (arr,m) => arr.length>1 ? Math.sqrt(arr.reduce((s,v)=>s+(v-m)**2,0)/(arr.length-1)) : 0;
+  const fmt   = v => v!==null ? +v.toFixed(2) : null;
 
-  // Get all unique dates across visible datasets
+  // All unique dates
   const allDates = [...new Set(vis.flatMap(ds => ds.rows.map(r => {
-    const d = r.time;
+    const d=r.time;
     return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
   })))].sort((a,b)=>{
-    const [da,ma,ya]=a.split('/'); const [db,mb,yb]=b.split('/');
-    return new Date(`${ya}-${ma}-${da}`) - new Date(`${yb}-${mb}-${db}`);
+    const[da,ma,ya]=a.split('/');const[db,mb,yb]=b.split('/');
+    return new Date(`${ya}-${ma}-${da}`)-new Date(`${yb}-${mb}-${db}`);
   });
 
-  // Helper: stats for a set of rows grouped by date
-  const statsByDate = (rows, dates) => dates.map(d => {
-    const [dd,mm,yyyy] = d.split('/');
-    const dr = rows.filter(r => {
-      const rd = r.time;
-      return String(rd.getDate()).padStart(2,'0')+'/'+String(rd.getMonth()+1).padStart(2,'0')+'/'+rd.getFullYear() === d;
+  // Stats per date for a row array
+  const statsByDate = (rows,dates) => dates.map(d => {
+    const dr=rows.filter(r=>{
+      const rd=r.time;
+      return String(rd.getDate()).padStart(2,'0')+'/'+String(rd.getMonth()+1).padStart(2,'0')+'/'+rd.getFullYear()===d;
     });
-    if (!dr.length) return null;
+    if(!dr.length) return null;
+    const pm25v=dr.map(r=>r.pm25), tempv=dr.map(r=>r.temp), humv=dr.map(r=>r.hum);
+    const hiv=dr.map(r=>calcHeatIndex(r.temp,r.hum));
+    const mpm25=vmean(pm25v), mtemp=vmean(tempv), mhum=vmean(humv), mhi=vmean(hiv);
     return {
-      n: dr.length,
-      pm25: +mean(dr.map(r=>r.pm25)),
-      pm10: +mean(dr.map(r=>r.pm10)),
-      temp: +mean(dr.map(r=>r.temp)),
-      hum:  +mean(dr.map(r=>r.hum)),
-      hi:   +mean(dr.map(r=>calcHeatIndex(r.temp,r.hum))),
-      pctI: +(dr.filter(r=>r.pm25>PM25_I).length/dr.length*100).toFixed(1),
+      n:dr.length,
+      pm25:fmt(mpm25), pm25sd:fmt(vsd(pm25v,mpm25)),
+      pm10:fmt(vmean(dr.map(r=>r.pm10))),
+      temp:fmt(mtemp), tempsd:fmt(vsd(tempv,mtemp)),
+      hum:fmt(mhum),   humsd:fmt(vsd(humv,mhum)),
+      hi:fmt(mhi),     hisd:fmt(vsd(hiv,mhi)),
+      pctI:fmt(dr.filter(r=>r.pm25>PM25_I).length/dr.length*100),
     };
   });
+
+  // SD band dataset (fill between mean-sd and mean+sd)
+  const sdBand = (data, sdArr, color) => [
+    { data:data.map((v,i)=>v!==null&&sdArr[i]!==null?+(v-sdArr[i]).toFixed(2):null),
+      borderColor:'transparent', backgroundColor:'transparent', pointRadius:0, fill:false, spanGaps:true, label:'_sdlo' },
+    { data:data.map((v,i)=>v!==null&&sdArr[i]!==null?+(v+sdArr[i]).toFixed(2):null),
+      borderColor:'transparent', backgroundColor:color, pointRadius:0, fill:'-1', spanGaps:true, label:'_sdhi' },
+  ];
+
+  const limI  = {label:'Padrão I (25)', data:allDates.map(()=>PM25_I), borderColor:'#c0392b', borderDash:[7,4], borderWidth:2, pointRadius:0, backgroundColor:'transparent'};
+  const limII = {label:'Padrão II (20)', data:allDates.map(()=>PM25_II), borderColor:'#e67e22', borderDash:[7,4], borderWidth:2, pointRadius:0, backgroundColor:'transparent'};
 
   let pmDatasets, thDatasets, hiDatasets, legendItems;
 
   if (dayMode === 'agg') {
-    // All visible rows aggregated by date
     const allRows = vis.flatMap(ds=>ds.rows);
     const ds = statsByDate(allRows, allDates);
+    const pm25vals = ds.map(d=>d?.pm25??null);
+    const pm25sds  = ds.map(d=>d?.pm25sd??null);
     pmDatasets = [
-      { label:'PM2.5 medio', data:ds.map(d=>d?.pm25??null), borderColor:PALETTE[0].solid, backgroundColor:PALETTE[0].alpha, fill:true, borderWidth:2.5, pointRadius:5, pointBackgroundColor:PALETTE[0].solid, tension:0.3, spanGaps:true },
-      { label:'Padrão I (25)', data:allDates.map(()=>PM25_I), borderColor:'#c0392b', borderDash:[7,4], borderWidth:2, pointRadius:0, backgroundColor:'transparent' },
-      { label:'Padrão II (20)', data:allDates.map(()=>PM25_II), borderColor:'#e67e22', borderDash:[7,4], borderWidth:2, pointRadius:0, backgroundColor:'transparent' },
+      ...sdBand(pm25vals, pm25sds, PALETTE[0].alpha),
+      { label:'PM2.5 ± DP', data:pm25vals, borderColor:PALETTE[0].solid, backgroundColor:'transparent', fill:false, borderWidth:2.5, pointRadius:5, pointBackgroundColor:PALETTE[0].solid, tension:0.3, spanGaps:true },
+      limI, limII,
     ];
     thDatasets = [
-      { type:'bar', label:'Temperatura', data:ds.map(d=>d?.temp??null), backgroundColor:PALETTE[1].alpha.replace('0.18','0.75'), borderColor:PALETTE[1].solid, borderWidth:2, borderRadius:5, yAxisID:'y', spanGaps:true },
-      { type:'line', label:'Umidade', data:ds.map(d=>d?.hum??null), borderColor:PALETTE[2].solid, backgroundColor:'transparent', borderWidth:2, pointRadius:5, tension:0.3, yAxisID:'y2', spanGaps:true },
+      { type:'bar', label:'Temperatura média', data:ds.map(d=>d?.temp??null), backgroundColor:PALETTE[1].alpha.replace('0.18','0.75'), borderColor:PALETTE[1].solid, borderWidth:2, borderRadius:5, yAxisID:'y', spanGaps:true },
+      { type:'line', label:'Umidade média', data:ds.map(d=>d?.hum??null), borderColor:PALETTE[2].solid, backgroundColor:'transparent', borderWidth:2, pointRadius:5, tension:0.3, yAxisID:'y2', spanGaps:true },
     ];
-    hiDatasets = [{ label:'Heat Index', data:ds.map(d=>d?.hi??null), backgroundColor:ds.map(d=>d?hiClass(d.hi).color+'aa':'transparent'), borderColor:ds.map(d=>d?hiClass(d.hi).color:'transparent'), borderWidth:2, borderRadius:5, spanGaps:true }];
-    legendItems = [{label:'PM2.5 medio (todos os locais)', color:PALETTE[0].solid, line:true},{label:'Padrão I',color:'#c0392b',line:true},{label:'Padrão II',color:'#e67e22',line:true}];
-    document.getElementById('dayPMTitle').textContent = 'PM2.5 medio por dia — todos os locais';
+    hiDatasets = [{
+      label:'Heat Index', data:ds.map(d=>d?.hi??null),
+      backgroundColor:ds.map(d=>d?hiClass(d.hi).color+'aa':'transparent'),
+      borderColor:ds.map(d=>d?hiClass(d.hi).color:'transparent'),
+      borderWidth:2, borderRadius:5, spanGaps:true
+    }];
+    legendItems = [{label:'PM2.5 ± DP (todos os locais)',color:PALETTE[0].solid,line:true},{label:'Padrão I',color:'#c0392b',line:true},{label:'Padrão II',color:'#e67e22',line:true}];
+    document.getElementById('dayPMTitle').textContent = 'PM2.5 médio (± DP) por dia — todos os locais';
   } else {
-    // One line per visible dataset
     pmDatasets = [
-      ...vis.map((ds,i) => {
+      ...vis.flatMap((ds,i) => {
         const d = statsByDate(ds.rows, allDates);
-        return { label:ds.name, data:d.map(s=>s?.pm25??null), borderColor:ds.color.solid, backgroundColor:'transparent', borderWidth:2.5, pointRadius:5, pointBackgroundColor:ds.color.solid, tension:0.3, spanGaps:true };
+        const vals = d.map(s=>s?.pm25??null);
+        const sds  = d.map(s=>s?.pm25sd??null);
+        return [
+          ...sdBand(vals, sds, ds.color.alpha),
+          { label:ds.name, data:vals, borderColor:ds.color.solid, backgroundColor:'transparent', fill:false, borderWidth:2.5, pointRadius:5, pointBackgroundColor:ds.color.solid, tension:0.3, spanGaps:true },
+        ];
       }),
-      { label:'Padrão I (25)', data:allDates.map(()=>PM25_I), borderColor:'#c0392b', borderDash:[7,4], borderWidth:2, pointRadius:0, backgroundColor:'transparent' },
-      { label:'Padrão II (20)', data:allDates.map(()=>PM25_II), borderColor:'#e67e22', borderDash:[7,4], borderWidth:2, pointRadius:0, backgroundColor:'transparent' },
+      limI, limII,
     ];
-    thDatasets = vis.map((ds,i) => {
+    thDatasets = vis.flatMap((ds,i) => {
       const d = statsByDate(ds.rows, allDates);
-      return { label:ds.name, data:d.map(s=>s?.temp??null), borderColor:ds.color.solid, backgroundColor:'transparent', borderWidth:2, pointRadius:4, tension:0.3, spanGaps:true };
+      return [{ label:ds.name, data:d.map(s=>s?.temp??null), borderColor:ds.color.solid, backgroundColor:'transparent', borderWidth:2, pointRadius:4, tension:0.3, spanGaps:true }];
     });
     hiDatasets = vis.map((ds,i) => {
       const d = statsByDate(ds.rows, allDates);
       return { label:ds.name, data:d.map(s=>s?.hi??null), borderColor:ds.color.solid, backgroundColor:ds.color.alpha, borderWidth:2.5, pointRadius:5, fill:false, tension:0.3, spanGaps:true };
     });
     legendItems = vis.map(ds=>({label:ds.name, color:ds.color.solid, line:true}));
-    document.getElementById('dayPMTitle').textContent = 'PM2.5 por dia — cada local';
+    document.getElementById('dayPMTitle').textContent = 'PM2.5 médio (± DP) por dia — cada local';
   }
 
   makeLegend('legendDayPM', legendItems);
 
   charts.dayPM = new Chart(document.getElementById('chartDayPM'), {
-    type:'line',
-    data:{ labels:allDates, datasets:pmDatasets },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
-      scales:{ y:{beginAtZero:true,suggestedMax:30,grid:{color:'#f5e8e0'},title:{display:true,text:'PM2.5 (µg/m³)',font:{size:11}},ticks:{font:{size:11}}}, x:{ticks:{font:{size:11}}} } }
+    type:'line', data:{labels:allDates, datasets:pmDatasets},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{y:{beginAtZero:true,suggestedMax:30,grid:{color:'#f5e8e0'},title:{display:true,text:'PM2.5 (µg/m³)',font:{size:11}},ticks:{font:{size:11}}},x:{ticks:{font:{size:11}}}}}
   });
 
-  charts.dayTH = new Chart(document.getElementById('chartDayTH'), {
-    data:{ labels:allDates, datasets:thDatasets },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:true,position:'top'}},
-      scales:{
-        y:{grid:{color:'#f5e8e0'},title:{display:true,text:'Temperatura (°C)',font:{size:11}},ticks:{font:{size:11}}},
-        y2:{position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'Umidade (%)',font:{size:11}},ticks:{font:{size:11}}},
-        x:{ticks:{font:{size:11}}}
-      }}
-  });
+  const thOpts = {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{legend:{display:true,position:'top'}},
+    scales:{
+      y:{grid:{color:'#f5e8e0'},title:{display:true,text:'Temperatura (°C)',font:{size:11}},ticks:{font:{size:11}}},
+      y2:{position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'Umidade (%)',font:{size:11}},ticks:{font:{size:11}}},
+      x:{ticks:{font:{size:11}}}
+    }
+  };
+  // When sep mode, all datasets are temp lines (no y2) — remove y2 axis
+  if (dayMode === 'sep') {
+    delete thOpts.scales.y2;
+    thOpts.scales.y.title.text = 'Temperatura (°C)';
+  }
+  charts.dayTH = new Chart(document.getElementById('chartDayTH'), {data:{labels:allDates,datasets:thDatasets},options:thOpts});
 
   charts.dayHI = new Chart(document.getElementById('chartDayHI'), {
-    type: dayMode==='agg' ? 'bar' : 'line',
-    data:{ labels:allDates, datasets:hiDatasets },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:dayMode==='sep'}},
-      scales:{ y:{suggestedMin:20,suggestedMax:50,grid:{color:'#f5e8e0'},title:{display:true,text:'Heat Index (°C)',font:{size:11}},ticks:{font:{size:11}}}, x:{ticks:{font:{size:11}}} } }
+    type:dayMode==='agg'?'bar':'line',
+    data:{labels:allDates,datasets:hiDatasets},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:dayMode==='sep'}},
+      scales:{y:{suggestedMin:20,suggestedMax:50,grid:{color:'#f5e8e0'},title:{display:true,text:'Heat Index (°C)',font:{size:11}},ticks:{font:{size:11}}},x:{ticks:{font:{size:11}}}}}
   });
 
   // Table
   const tbody = document.querySelector('#dayTable tbody');
-  if (dayMode === 'agg') {
-    const allRows = vis.flatMap(ds=>ds.rows);
-    const ds = statsByDate(allRows, allDates);
-    tbody.innerHTML = allDates.map((day,i)=>{
-      const d = ds[i]; if(!d) return '';
-      const cl=hiClass(d.hi);
-      return `<tr><td><strong>${day}</strong></td><td>${d.n}</td><td>${d.pm25}</td><td>${d.pm10}</td><td>${d.temp}°C</td><td>${d.hum}%</td><td style="color:${cl.color};font-weight:700;">${d.hi}°C — ${cl.label}</td><td>${d.pctI}%</td></tr>`;
-    }).join('');
-  } else {
-    tbody.innerHTML = vis.flatMap(ds => {
-      const d = statsByDate(ds.rows, allDates);
-      return allDates.map((day,i)=>{
-        const s=d[i]; if(!s) return '';
-        const cl=hiClass(s.hi);
-        return `<tr><td><strong>${day}</strong> <span style="font-size:10px;color:${ds.color.solid};">● ${ds.name}</span></td><td>${s.n}</td><td>${s.pm25}</td><td>${s.pm10}</td><td>${s.temp}°C</td><td>${s.hum}%</td><td style="color:${cl.color};font-weight:700;">${s.hi}°C — ${cl.label}</td><td>${s.pctI}%</td></tr>`;
-      });
-    }).join('');
-  }
+  const rows2render = dayMode==='agg'
+    ? [{rows:vis.flatMap(ds=>ds.rows), name:'Todos', color:{solid:'var(--text)'}}]
+    : vis;
+  tbody.innerHTML = rows2render.flatMap(src => {
+    const d = statsByDate(src.rows||src.rows, allDates);
+    return allDates.map((day,i)=>{
+      const s=d[i]; if(!s) return '';
+      const cl=hiClass(s.hi);
+      const nameCell = dayMode==='sep' ? `<strong>${day}</strong> <span style="font-size:10px;color:${src.color.solid};">● ${src.name}</span>` : `<strong>${day}</strong>`;
+      return `<tr><td>${nameCell}</td><td>${s.n}</td><td>${s.pm25} <small style="color:var(--muted);">±${s.pm25sd}</small></td><td>${s.pm10}</td><td>${s.temp}°C <small style="color:var(--muted);">±${s.tempsd}</small></td><td>${s.hum}% <small style="color:var(--muted);">±${s.humsd}</small></td><td style="color:${cl.color};font-weight:700;">${s.hi}°C — ${cl.label}</td><td>${s.pctI}%</td></tr>`;
+    });
+  }).join('');
 }
 
 // ============================================================
 // ANALYSIS BY HOUR
 // ============================================================
-let hourMode = 'agg'; // 'agg' | 'sep' | 'day'
+let hourMode = 'agg';
 
 function setHourMode(mode) {
   hourMode = mode;
   ['Agg','Sep','Day'].forEach(m => {
-    const btn = document.getElementById('hourMode'+m);
-    if (btn) btn.className = 'toggle-btn' + (mode===m.toLowerCase()?' on':'');
+    const btn=document.getElementById('hourMode'+m);
+    if(btn) btn.className='toggle-btn'+(mode===m.toLowerCase()?' on':'');
   });
-  const descs = {
-    agg: 'Agrega todos os dias e locais por hora — revela o padrao circadiano geral.',
-    sep: 'Uma linha por local — compare o padrao horario de cada local.',
-    day: 'Uma linha por dia — compare como o padrao horario variou entre dias.',
-  };
-  const d = document.getElementById('hourModeDesc');
-  if (d) d.textContent = descs[mode];
+  const descs={agg:'Agrega todos os dias e locais por hora — padrao circadiano geral.',sep:'Uma linha por local — compare o padrao horario de cada local.',day:'Uma linha por dia — compare como o padrao horario variou entre dias.'};
+  const d=document.getElementById('hourModeDesc'); if(d) d.textContent=descs[mode];
   renderByHour();
 }
 
 function renderByHour() {
   ['globalHourPM','globalHourHI','globalHourT'].forEach(k=>{if(charts[k]){charts[k].destroy();delete charts[k];}});
-  const vis = visDS();
-  if (!vis.length) return;
+  const vis=visDS(); if(!vis.length) return;
+  const HOURS=Array.from({length:24},(_,i)=>i);
 
-  const HOURS = Array.from({length:24},(_,i)=>i);
-  const mean = arr => arr.length ? arr.reduce((s,v)=>s+v,0)/arr.length : null;
+  const vmean = arr => arr.length ? arr.reduce((s,v)=>s+v,0)/arr.length : null;
+  const vsd   = (arr,m) => arr.length>1 ? Math.sqrt(arr.reduce((s,v)=>s+(v-m)**2,0)/(arr.length-1)) : 0;
 
-  // Helper: hourly stats for a set of rows
   const hourlyStats = rows => HOURS.map(h => {
-    const hr = rows.filter(r=>r.hour===h);
-    if (!hr.length) return null;
+    const hr=rows.filter(r=>r.hour===h);
+    if(!hr.length) return null;
+    const pm25v=hr.map(r=>r.pm25), tempv=hr.map(r=>r.temp), humv=hr.map(r=>r.hum);
+    const hiv=hr.map(r=>calcHeatIndex(r.temp,r.hum));
+    const mpm25=vmean(pm25v), mtemp=vmean(tempv), mhum=vmean(humv), mhi=vmean(hiv);
     return {
-      n:    hr.length,
-      pm25: +mean(hr.map(r=>r.pm25)).toFixed(2),
-      temp: +mean(hr.map(r=>r.temp)).toFixed(1),
-      hum:  +mean(hr.map(r=>r.hum)).toFixed(1),
-      hi:   +mean(hr.map(r=>calcHeatIndex(r.temp,r.hum))).toFixed(1),
-      pctI: +(hr.filter(r=>r.pm25>PM25_I).length/hr.length*100).toFixed(1),
+      n:hr.length,
+      pm25:+mpm25.toFixed(2), pm25sd:+vsd(pm25v,mpm25).toFixed(2),
+      temp:+mtemp.toFixed(1), tempsd:+vsd(tempv,mtemp).toFixed(1),
+      hum:+mhum.toFixed(1),   humsd:+vsd(humv,mhum).toFixed(1),
+      hi:+mhi.toFixed(1),     hisd:+vsd(hiv,mhi).toFixed(1),
+      pctI:+(hr.filter(r=>r.pm25>PM25_I).length/hr.length*100).toFixed(1),
     };
   });
 
+  const sdBand = (data,sdArr,color) => [
+    {data:data.map((v,i)=>v!==null&&sdArr[i]!==null?+(v-sdArr[i]).toFixed(2):null), borderColor:'transparent',backgroundColor:'transparent',pointRadius:0,fill:false,spanGaps:true,label:'_sdlo'},
+    {data:data.map((v,i)=>v!==null&&sdArr[i]!==null?+(v+sdArr[i]).toFixed(2):null), borderColor:'transparent',backgroundColor:color,pointRadius:0,fill:'-1',spanGaps:true,label:'_sdhi'},
+  ];
+
+  const limI  = {label:'Padrão I (25)', data:HOURS.map(()=>PM25_I), borderColor:'#c0392b',borderDash:[7,4],borderWidth:2,pointRadius:0,backgroundColor:'transparent'};
+  const limII = {label:'Padrão II (20)', data:HOURS.map(()=>PM25_II),borderColor:'#e67e22',borderDash:[7,4],borderWidth:2,pointRadius:0,backgroundColor:'transparent'};
+  const hlabels = HOURS.map(h=>h+'h');
+
   let pmDatasets, hiDatasets, tDatasets, legendItems;
 
-  const limI  = { label:'Padrão I (25)', data:HOURS.map(()=>PM25_I), borderColor:'#c0392b', borderDash:[7,4], borderWidth:2, pointRadius:0, backgroundColor:'transparent' };
-  const limII = { label:'Padrão II (20)', data:HOURS.map(()=>PM25_II), borderColor:'#e67e22', borderDash:[7,4], borderWidth:2, pointRadius:0, backgroundColor:'transparent' };
+  // Get unique dates
+  const allDates=[...new Set(vis.flatMap(ds=>ds.rows.map(r=>{const d=r.time;return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()})))].sort();
 
-  if (hourMode === 'agg') {
-    const allRows = vis.flatMap(ds=>ds.rows);
-    const hs = hourlyStats(allRows);
-    pmDatasets = [
-      { label:'PM2.5 medio', data:hs.map(s=>s?.pm25??null), borderColor:PALETTE[0].solid, backgroundColor:PALETTE[0].alpha, fill:true, borderWidth:2.5, pointRadius:4, pointBackgroundColor:PALETTE[0].solid, tension:0.4, spanGaps:true },
-      limI, limII
+  if (hourMode==='agg') {
+    const allRows=vis.flatMap(ds=>ds.rows);
+    const hs=hourlyStats(allRows);
+    const pm25v=hs.map(s=>s?.pm25??null), pm25sds=hs.map(s=>s?.pm25sd??null);
+    pmDatasets=[...sdBand(pm25v,pm25sds,PALETTE[0].alpha),
+      {label:'PM2.5 ± DP', data:pm25v, borderColor:PALETTE[0].solid,backgroundColor:'transparent',fill:false,borderWidth:2.5,pointRadius:4,pointBackgroundColor:PALETTE[0].solid,tension:0.4,spanGaps:true},
+      limI,limII];
+    hiDatasets=[{label:'Heat Index',data:hs.map(s=>s?.hi??null),backgroundColor:hs.map(s=>s?hiClass(s.hi).color+'aa':'transparent'),borderColor:hs.map(s=>s?hiClass(s.hi).color:'transparent'),borderWidth:2,borderRadius:4}];
+    tDatasets=[
+      {type:'bar',label:'Temperatura média',data:hs.map(s=>s?.temp??null),backgroundColor:PALETTE[1].alpha.replace('0.18','0.7'),borderColor:PALETTE[1].solid,borderWidth:2,borderRadius:4,yAxisID:'y',spanGaps:true},
+      {type:'line',label:'Umidade média',data:hs.map(s=>s?.hum??null),borderColor:PALETTE[2].solid,backgroundColor:'transparent',borderWidth:2,pointRadius:3,tension:0.4,yAxisID:'y2',spanGaps:true},
     ];
-    hiDatasets = [{ label:'Heat Index', data:hs.map(s=>s?.hi??null), backgroundColor:hs.map(s=>s?hiClass(s.hi).color+'aa':'transparent'), borderColor:hs.map(s=>s?hiClass(s.hi).color:'transparent'), borderWidth:2, borderRadius:4 }];
-    tDatasets = [
-      { type:'bar', label:'Temperatura', data:hs.map(s=>s?.temp??null), backgroundColor:PALETTE[1].alpha.replace('0.18','0.7'), borderColor:PALETTE[1].solid, borderWidth:2, borderRadius:4, yAxisID:'y', spanGaps:true },
-      { type:'line', label:'Umidade', data:hs.map(s=>s?.hum??null), borderColor:PALETTE[2].solid, backgroundColor:'transparent', borderWidth:2, pointRadius:3, tension:0.4, yAxisID:'y2', spanGaps:true },
-    ];
-    legendItems = [{label:'PM2.5 medio (todos)',color:PALETTE[0].solid,line:true},{label:'Padrão I',color:'#c0392b',line:true},{label:'Padrão II',color:'#e67e22',line:true}];
-    document.getElementById('hourPMTitle').textContent = 'PM2.5 medio por hora — todos os dias e locais';
+    legendItems=[{label:'PM2.5 ± DP (todos)',color:PALETTE[0].solid,line:true},{label:'Padrão I',color:'#c0392b',line:true},{label:'Padrão II',color:'#e67e22',line:true}];
+    document.getElementById('hourPMTitle').textContent='PM2.5 médio (± DP) por hora — todos os dias e locais';
 
-  } else if (hourMode === 'sep') {
-    pmDatasets = [
-      ...vis.map(ds => {
-        const hs = hourlyStats(ds.rows);
-        return { label:ds.name, data:hs.map(s=>s?.pm25??null), borderColor:ds.color.solid, backgroundColor:'transparent', borderWidth:2.5, pointRadius:4, pointBackgroundColor:ds.color.solid, tension:0.4, spanGaps:true };
-      }),
-      limI, limII
-    ];
-    hiDatasets = vis.map(ds => {
-      const hs = hourlyStats(ds.rows);
-      return { label:ds.name, data:hs.map(s=>s?.hi??null), borderColor:ds.color.solid, backgroundColor:ds.color.alpha, borderWidth:2.5, pointRadius:4, fill:false, tension:0.4, spanGaps:true };
-    });
-    tDatasets = vis.map(ds => {
-      const hs = hourlyStats(ds.rows);
-      return { label:ds.name, data:hs.map(s=>s?.temp??null), borderColor:ds.color.solid, backgroundColor:'transparent', borderWidth:2, pointRadius:3, tension:0.4, spanGaps:true };
-    });
-    legendItems = vis.map(ds=>({label:ds.name, color:ds.color.solid, line:true}));
-    document.getElementById('hourPMTitle').textContent = 'PM2.5 por hora — cada local';
+  } else if (hourMode==='sep') {
+    pmDatasets=[
+      ...vis.flatMap(ds=>{
+        const hs=hourlyStats(ds.rows);
+        const vals=hs.map(s=>s?.pm25??null),sds=hs.map(s=>s?.pm25sd??null);
+        return [...sdBand(vals,sds,ds.color.alpha),
+          {label:ds.name,data:vals,borderColor:ds.color.solid,backgroundColor:'transparent',fill:false,borderWidth:2.5,pointRadius:4,pointBackgroundColor:ds.color.solid,tension:0.4,spanGaps:true}];
+      }),limI,limII];
+    hiDatasets=vis.map(ds=>{const hs=hourlyStats(ds.rows);return{label:ds.name,data:hs.map(s=>s?.hi??null),borderColor:ds.color.solid,backgroundColor:ds.color.alpha,borderWidth:2.5,pointRadius:4,fill:false,tension:0.4,spanGaps:true};});
+    tDatasets=vis.map(ds=>{const hs=hourlyStats(ds.rows);return{label:ds.name,data:hs.map(s=>s?.temp??null),borderColor:ds.color.solid,backgroundColor:'transparent',borderWidth:2,pointRadius:3,tension:0.4,spanGaps:true};});
+    legendItems=vis.map(ds=>({label:ds.name,color:ds.color.solid,line:true}));
+    document.getElementById('hourPMTitle').textContent='PM2.5 médio (± DP) por hora — cada local';
 
   } else { // day
-    // Get unique dates across all visible
-    const allDates = [...new Set(vis.flatMap(ds => ds.rows.map(r => {
-      const d=r.time; return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
-    })))].sort();
-    const dayColors = PALETTE;
-    pmDatasets = [
-      ...allDates.map((day,i) => {
-        const dayRows = vis.flatMap(ds => ds.rows.filter(r => {
-          const d=r.time; return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()===day;
-        }));
-        const hs = hourlyStats(dayRows);
-        const c = dayColors[i % dayColors.length];
-        return { label:day, data:hs.map(s=>s?.pm25??null), borderColor:c.solid, backgroundColor:'transparent', borderWidth:2.5, pointRadius:4, pointBackgroundColor:c.solid, tension:0.4, spanGaps:true };
-      }),
-      limI, limII
-    ];
-    hiDatasets = allDates.map((day,i) => {
-      const dayRows = vis.flatMap(ds => ds.rows.filter(r => {
-        const d=r.time; return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()===day;
-      }));
-      const hs = hourlyStats(dayRows);
-      const c = dayColors[i % dayColors.length];
-      return { label:day, data:hs.map(s=>s?.hi??null), borderColor:c.solid, backgroundColor:'transparent', borderWidth:2.5, pointRadius:4, fill:false, tension:0.4, spanGaps:true };
+    pmDatasets=[
+      ...allDates.map((day,i)=>{
+        const dayRows=vis.flatMap(ds=>ds.rows.filter(r=>{const d=r.time;return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()===day;}));
+        const hs=hourlyStats(dayRows);
+        const c=PALETTE[i%PALETTE.length];
+        const vals=hs.map(s=>s?.pm25??null),sds=hs.map(s=>s?.pm25sd??null);
+        return [...sdBand(vals,sds,c.alpha),
+          {label:day,data:vals,borderColor:c.solid,backgroundColor:'transparent',fill:false,borderWidth:2.5,pointRadius:4,pointBackgroundColor:c.solid,tension:0.4,spanGaps:true}];
+      }).flat(),limI,limII];
+    hiDatasets=allDates.map((day,i)=>{
+      const dayRows=vis.flatMap(ds=>ds.rows.filter(r=>{const d=r.time;return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()===day;}));
+      const hs=hourlyStats(dayRows); const c=PALETTE[i%PALETTE.length];
+      return{label:day,data:hs.map(s=>s?.hi??null),borderColor:c.solid,backgroundColor:'transparent',borderWidth:2.5,pointRadius:4,fill:false,tension:0.4,spanGaps:true};
     });
-    tDatasets = allDates.map((day,i) => {
-      const dayRows = vis.flatMap(ds => ds.rows.filter(r => {
-        const d=r.time; return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()===day;
-      }));
-      const hs = hourlyStats(dayRows);
-      const c = dayColors[i % dayColors.length];
-      return { label:day, data:hs.map(s=>s?.temp??null), borderColor:c.solid, backgroundColor:'transparent', borderWidth:2, pointRadius:3, tension:0.4, spanGaps:true };
+    tDatasets=allDates.map((day,i)=>{
+      const dayRows=vis.flatMap(ds=>ds.rows.filter(r=>{const d=r.time;return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()===day;}));
+      const hs=hourlyStats(dayRows); const c=PALETTE[i%PALETTE.length];
+      return{label:day,data:hs.map(s=>s?.temp??null),borderColor:c.solid,backgroundColor:'transparent',borderWidth:2,pointRadius:3,tension:0.4,spanGaps:true};
     });
-    legendItems = allDates.map((day,i)=>({label:day, color:dayColors[i%dayColors.length].solid, line:true}));
-    document.getElementById('hourPMTitle').textContent = 'PM2.5 por hora — cada dia sobreposto';
+    legendItems=allDates.map((day,i)=>({label:day,color:PALETTE[i%PALETTE.length].solid,line:true}));
+    document.getElementById('hourPMTitle').textContent='PM2.5 médio (± DP) por hora — cada dia';
   }
 
-  const el = document.getElementById('legendHourPM');
-  if (el) makeLegend('legendHourPM', legendItems);
+  const el=document.getElementById('legendHourPM'); if(el) makeLegend('legendHourPM',legendItems);
 
-  const lineOpts = (yTitle) => ({
-    responsive:true, maintainAspectRatio:false,
-    plugins:{ legend:{display:false} },
-    scales:{ y:{beginAtZero:true,suggestedMax:30,grid:{color:'#f5e8e0'},title:{display:true,text:yTitle,font:{size:11}},ticks:{font:{size:11}}}, x:{ticks:{font:{size:10}}} }
+  charts.globalHourPM=new Chart(document.getElementById('chartGlobalHourPM'),{
+    type:'line',data:{labels:hlabels,datasets:pmDatasets},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{y:{beginAtZero:true,suggestedMax:30,grid:{color:'#f5e8e0'},title:{display:true,text:'PM2.5 (µg/m³)',font:{size:11}},ticks:{font:{size:11}}},x:{ticks:{font:{size:10}}}}}
   });
 
-  charts.globalHourPM = new Chart(document.getElementById('chartGlobalHourPM'), {
-    type:'line', data:{ labels:HOURS.map(h=>h+'h'), datasets:pmDatasets },
-    options: lineOpts('PM2.5 (µg/m³)')
+  charts.globalHourHI=new Chart(document.getElementById('chartGlobalHourHI'),{
+    type:hourMode==='agg'?'bar':'line',
+    data:{labels:hlabels,datasets:hiDatasets},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:hourMode!=='agg',position:'top'},
+        annotation:{annotations:{a27:{type:'line',yMin:27,yMax:27,borderColor:'rgba(243,156,18,0.6)',borderDash:[5,4],borderWidth:1.5},a33:{type:'line',yMin:33,yMax:33,borderColor:'rgba(230,126,34,0.7)',borderDash:[5,4],borderWidth:1.5},a42:{type:'line',yMin:42,yMax:42,borderColor:'rgba(231,76,60,0.7)',borderDash:[5,4],borderWidth:1.5}}}},
+      scales:{y:{suggestedMin:20,suggestedMax:50,grid:{color:'#f5e8e0'},title:{display:true,text:'Heat Index (°C)',font:{size:11}},ticks:{font:{size:11}}},x:{ticks:{font:{size:10}}}}}
   });
 
-  charts.globalHourHI = new Chart(document.getElementById('chartGlobalHourHI'), {
-    type: hourMode==='agg' ? 'bar' : 'line',
-    data:{ labels:HOURS.map(h=>h+'h'), datasets:hiDatasets },
-    options:{ responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{display: hourMode!=='agg'},
-        annotation:{ annotations:{
-          a27:{type:'line',yMin:27,yMax:27,borderColor:'rgba(243,156,18,0.6)',borderDash:[5,4],borderWidth:1.5},
-          a33:{type:'line',yMin:33,yMax:33,borderColor:'rgba(230,126,34,0.7)',borderDash:[5,4],borderWidth:1.5},
-          a42:{type:'line',yMin:42,yMax:42,borderColor:'rgba(231,76,60,0.7)',borderDash:[5,4],borderWidth:1.5},
-        }}},
-      scales:{ y:{suggestedMin:20,suggestedMax:50,grid:{color:'#f5e8e0'},title:{display:true,text:'Heat Index (°C)',font:{size:11}},ticks:{font:{size:11}}}, x:{ticks:{font:{size:10}}} }
-    }
-  });
+  // Temp chart — always line for sep/day, bar+line for agg
+  const tOpts={responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top'}},
+    scales:{y:{grid:{color:'#f5e8e0'},title:{display:true,text:'Temperatura (°C)',font:{size:11}},ticks:{font:{size:11}}},x:{ticks:{font:{size:10}}}}};
+  if(hourMode==='agg') tOpts.scales.y2={position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'Umidade (%)',font:{size:11}},ticks:{font:{size:11}}};
+  charts.globalHourT=new Chart(document.getElementById('chartGlobalHourT'),{data:{labels:hlabels,datasets:tDatasets},options:tOpts});
 
-  charts.globalHourT = new Chart(document.getElementById('chartGlobalHourT'), {
-    data:{ labels:HOURS.map(h=>h+'h'), datasets:tDatasets },
-    options:{ responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{display: hourMode!=='agg', position:'top'} },
-      scales:{
-        y:{grid:{color:'#f5e8e0'},title:{display:true,text:'Temperatura (°C)',font:{size:11}},ticks:{font:{size:11}}},
-        y2:{ position:'right', grid:{drawOnChartArea:false}, title:{display:true,text:'Umidade (%)',font:{size:11}}, ticks:{font:{size:11}} },
-        x:{ticks:{font:{size:10}}}
-      }}
-  });
-
-  // Table
-  const tbody = document.querySelector('#hourGlobalTable tbody');
-  const allRows = vis.flatMap(ds=>ds.rows);
-  const hs = hourlyStats(allRows);
-  tbody.innerHTML = HOURS.map(h => {
-    const s = hs[h]; if(!s) return '';
-    const cl = hiClass(s.hi);
-    return `<tr><td><strong>${h}h</strong></td><td>${s.n}</td><td>${s.pm25}</td><td>${s.temp}°C</td><td>${s.hum}%</td><td style="color:${cl.color};font-weight:700;">${s.hi}°C</td><td style="color:${cl.color}">${cl.label}</td><td>${s.pctI}%</td></tr>`;
+  // Table (always shows aggregate)
+  const allRows=vis.flatMap(ds=>ds.rows);
+  const hs=hourlyStats(allRows);
+  const tbody=document.querySelector('#hourGlobalTable tbody');
+  tbody.innerHTML=HOURS.map(h=>{
+    const s=hs[h]; if(!s) return '';
+    const cl=hiClass(s.hi);
+    return `<tr><td><strong>${h}h</strong></td><td>${s.n}</td><td>${s.pm25} <small style="color:var(--muted);">±${s.pm25sd}</small></td><td>${s.temp}°C <small style="color:var(--muted);">±${s.tempsd}</small></td><td>${s.hum}% <small style="color:var(--muted);">±${s.humsd}</small></td><td style="color:${cl.color};font-weight:700;">${s.hi}°C</td><td style="color:${cl.color}">${cl.label}</td><td>${s.pctI}%</td></tr>`;
   }).join('');
 }
-
-
 
 </script>
 </div><!-- /appWrapper -->
