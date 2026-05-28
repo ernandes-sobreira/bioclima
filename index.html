@@ -802,67 +802,87 @@ function parseCSV(text, startH, endH) {
   const lines = text.split(/\r?\n/).filter(l => l.trim());
   if (lines.length < 2) return [];
 
-  // Detect delimiter: semicolon or comma
   const delim = lines[0].includes(';') ? ';' : ',';
-  const rawHdr = lines[0].split(delim).map(h => h.trim().replace(/;$/, ''));
 
-  // Detect if date and time are in separate columns (semicolon files have DATE + time as col[1])
-  // Format: DATE=dd/mm/yyyy, col[1]=HH:MM:SS — data cols shift by 1
-  const splitDateTime = delim === ';' && /^\d{2}\/\d{2}\/\d{4}$/.test(
-    lines[1] ? lines[1].split(delim)[0].trim() : ''
-  );
+  // Normalize header label to a clean uppercase key
+  const norm = h => h.trim()
+    .replace(/[\xb5\u00b5]/g,'u').replace(/[\xb3\u00b3]/g,'3')
+    .replace(/[\xb0\u00b0]/g,'').replace(/\s*\(.*?\)/g,'')
+    .replace(/\s+/g,'_').replace(/[^A-Z0-9_.]/gi,'').toUpperCase();
 
-  // Build effective header: if splitDateTime, insert a synthetic TIME header at index 1
-  const hdr = splitDateTime
-    ? ['DATE', 'TIME', ...rawHdr.slice(1)]
-    : rawHdr;
+  const rawHdr  = lines[0].split(delim);
+  const normHdr = rawHdr.map(norm);
+
+  // Detect split date+time cols: dd/mm/yyyy in date col, AND a separate time col exists
+  const firstDataVal = (lines[1]||'').split(delim)[idxDate>=0?idxDate:0].trim();
+  const splitDateTime = delim === ';' && /^\d{2}\/\d{2}\/\d{4}$/.test(firstDataVal) && idxTime >= 0;
+
+  // Find index of first matching candidate
+  const colIdx = (...cands) => {
+    for (const c of cands) { const i = normHdr.indexOf(c); if (i>=0) return i; }
+    return -1;
+  };
+
+  const idxDate = colIdx('DATA','DATE');
+  const idxTime = colIdx('HORA','TIME');
+  const idxPM25 = colIdx('PM25','PM2_5','PM2.5');
+  const idxPM10 = colIdx('PM10');
+  const idxCO2  = colIdx('CO2');
+  const idxHCHO = colIdx('HCHO');
+  const idxTemp = colIdx('TEMPERATURA','TEMPERATURE','TEMP');
+  const idxHum  = colIdx('UMIDADE','HUMIDITY');
+
+  // Shift data col indices when unlabeled time col is inserted after DATE
+  const dataShift = (splitDateTime && idxTime < 0 && nextIsTime) ? 1 : 0;
+  const dIdx = i => (i > (idxDate >= 0 ? idxDate : 0) && i >= 0) ? i + dataShift : i;
+
+  const pf = s => parseFloat((s||'0').trim().replace(',','.')) || 0;
+  const gc = (vals, i) => i>=0 ? (vals[i]||'').trim() : '0';
 
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
-    const vals = lines[i].split(delim).map(v => v.trim());
-    if (vals.length < hdr.length - 1) continue;
-
-    const row = {};
-    hdr.forEach((h, j) => { row[h] = (vals[j] || '').trim(); });
+    const vals = lines[i].split(delim);
+    if (vals.length < 3) continue;
 
     // Parse datetime
     let t;
     if (splitDateTime) {
-      // dd/mm/yyyy HH:MM:SS
-      const [dd, mm, yyyy] = row['DATE'].split('/');
-      t = new Date(`${yyyy}-${mm}-${dd}T${row['TIME']}`);
+      const dp = gc(vals, idxDate), tp = gc(vals, effectiveTimeIdx);
+      if (dp.includes('/')) {
+        const [dd,mm,yyyy] = dp.split('/');
+        t = new Date(`${yyyy}-${mm}-${dd}T${tp}`);
+      } else {
+        t = new Date(`${dp}T${tp}`);
+      }
     } else {
-      t = new Date(row['DATE']);
+      t = new Date(gc(vals, idxDate));
     }
     if (!t || isNaN(t)) continue;
 
     const h = t.getHours(), m = t.getMinutes();
-    const hm = h * 60 + m;
-
-    // time filter
     if (startH !== null && endH !== null) {
-      const sHM = startH[0] * 60 + startH[1];
-      const eHM = endH[0] * 60 + endH[1];
-      if (hm < sHM || hm > eHM) continue;
+      const sHM = startH[0]*60+startH[1], eHM = endH[0]*60+endH[1];
+      if (h*60+m < sHM || h*60+m > eHM) continue;
     }
 
-    row.time = t;
-    row.hour = h;
-    row.pm25 = parseFloat(row['PM2.5(ug/m3)']) || 0;
-    row.pm10 = parseFloat(row['PM10(ug/m3)']) || 0;
-    row.co2  = parseFloat(row['CO2(ppm)'])     || 0;
-    row.hcho = parseFloat(row['HCHO(mg/m3)'])  || 0;
-    row.temp = parseFloat(row['TEMPERATURE'])   || 0;
-    row.hum  = parseFloat(row['HUMIDITY(%)'])   || 0;
-    row.itu  = calcITU(row.temp, row.hum);
-    row.thi  = calcTHI(row.temp, row.hum);
-    row.wbgt = calcWBGT(row.temp, row.hum);
-    row.st   = calcST(row.temp, row.hum);
-    rows.push(row);
+    const temp = pf(gc(vals, dIdx(idxTemp)));
+    const hum  = pf(gc(vals, dIdx(idxHum)));
+
+    rows.push({
+      time: t, hour: h, DATE: t.toISOString(),
+      pm25: pf(gc(vals, dIdx(idxPM25))),
+      pm10: pf(gc(vals, dIdx(idxPM10))),
+      co2:  pf(gc(vals, dIdx(idxCO2))),
+      hcho: pf(gc(vals, dIdx(idxHCHO))),
+      temp, hum,
+      itu:  calcITU(temp, hum),
+      thi:  calcTHI(temp, hum),
+      wbgt: calcWBGT(temp, hum),
+      st:   calcST(temp, hum),
+    });
   }
   return rows;
 }
-
 // ============================================================
 // INDICES
 // ============================================================
