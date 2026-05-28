@@ -483,6 +483,25 @@ tr:hover td { background: #fdf9f7; }
   .hist-files { font-size:12px; font-weight:700; color:var(--text); margin-bottom:2px; }
   .hist-stats { font-size:11px; color:var(--muted); }
   #toast { position:fixed; bottom:24px; right:24px; background:var(--text); color:#fff; padding:10px 18px; border-radius:8px; font-size:13px; font-weight:600; z-index:9999; display:none; box-shadow:0 4px 16px rgba(0,0,0,0.2); }
+  /* CHART DOWNLOAD BUTTONS */
+  .chart-dl-bar {
+    display: flex; gap: 6px; align-items: center;
+  }
+  .chart-dl-btn {
+    display: flex; align-items: center; gap: 4px;
+    padding: 4px 10px; border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface); color: var(--muted);
+    font-size: 10px; font-weight: 700;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer; transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .chart-dl-btn:hover { border-color: var(--c2); color: var(--c2); background: #fff8f3; }
+  .chart-dl-btn.png { border-color: #d35400; color: #d35400; }
+  .chart-dl-btn.png:hover { background: #d35400; color: #fff; }
+  .chart-dl-btn.csv { border-color: var(--teal,#16a085); color: #16a085; }
+  .chart-dl-btn.csv:hover { background: #16a085; color: #fff; }
   /* DATASET FILTER */
   .ds-filter { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
   .ds-chip {
@@ -1176,6 +1195,7 @@ async function runAnalysis() {
 
     const fbBtn=document.getElementById('fbSaveBtn');
     if(fbBtn) fbBtn.style.display='flex';
+    try { injectChartDownloadButtons(); } catch(e) { console.error('injectBtn:',e); }
 
     loadingEl.style.display = 'none';
     resultsEl.style.display = 'block';
@@ -2002,6 +2022,8 @@ function refreshChartVisibility() {
   try { renderComparison(); } catch(e) {}
   try { renderByDay(); } catch(e) {}
   try { renderByHour(); } catch(e) {}
+  // Re-inject after chart rebuilds (buttons removed on destroy)
+  setTimeout(() => { try { injectChartDownloadButtons(); } catch(e) {} }, 50);
 }
 
 // ============================================================
@@ -2170,6 +2192,7 @@ function setDayMode(mode) {
   };
   document.getElementById('dayModeDesc').textContent = descs[mode];
   renderByDay();
+  setTimeout(()=>{try{injectChartDownloadButtons();}catch(e){}},50);
 }
 
 function renderByDay() {
@@ -2333,6 +2356,7 @@ function setHourMode(mode) {
   const descs={agg:'Agrega todos os dias e locais por hora — padrao circadiano geral.',sep:'Uma linha por local — compare o padrao horario de cada local.',day:'Uma linha por dia — compare como o padrao horario variou entre dias.'};
   const d=document.getElementById('hourModeDesc'); if(d) d.textContent=descs[mode];
   renderByHour();
+  setTimeout(()=>{try{injectChartDownloadButtons();}catch(e){}},50);
 }
 
 function renderByHour() {
@@ -2457,6 +2481,173 @@ function renderByHour() {
     const cl=hiClass(s.hi);
     return `<tr><td><strong>${h}h</strong></td><td>${s.n}</td><td>${s.pm25} <small style="color:var(--muted);">±${s.pm25sd}</small></td><td>${s.temp}°C <small style="color:var(--muted);">±${s.tempsd}</small></td><td>${s.hum}% <small style="color:var(--muted);">±${s.humsd}</small></td><td style="color:${cl.color};font-weight:700;">${s.hi}°C</td><td style="color:${cl.color}">${cl.label}</td><td>${s.pctI}%</td></tr>`;
   }).join('');
+}
+
+
+// ============================================================
+// CHART DOWNLOAD BUTTONS — injected into every chart-box
+// ============================================================
+const CHART_CSV_MAP = {
+  chartResumo:       () => csvFromStats(['Arquivo','Temp media (C)','Umidade media (%)'], datasets, d=>[d.name, d.stats.temp.mean, d.stats.hum.mean]),
+  chartITC:          () => csvFromStats(['Arquivo','ITU','THI','WBGT'], datasets, d=>[d.name, d.stats.itu.mean, d.stats.thi.mean, d.stats.wbgt.mean]),
+  chartPM:           () => csvFromStats(['Arquivo','PM2.5 medio (ug/m3)','PM10 medio (ug/m3)'], datasets, d=>[d.name, d.stats.pm25.mean, d.stats.pm10.mean]),
+  chartPMDist:       () => csvFromStats(['Arquivo','Dentro Pad II (<=20)','Entre Pad I-II','Acima Pad I (>25)'], datasets, d=>[d.name, d.rows.filter(r=>r.pm25<=20).length, d.rows.filter(r=>r.pm25>20&&r.pm25<=25).length, d.rows.filter(r=>r.pm25>25).length]),
+  chartHourlyPM:     () => csvFromHourly(['Hora','PM2.5 medio'], r=>r.pm25),
+  chartHourlyPct:    () => csvFromHourly(['Hora','% acima Pad I'], r=>r.pm25>25?1:0, true),
+  chartHourlyTH:     () => csvFromHourly(['Hora','Temp media','Umidade media'], r=>[r.temp, r.hum]),
+  chartSeries:       () => csvFromAllRows(['DATE','PM2.5','PM10','Temp','Umidade','ITU']),
+  chartRadar:        () => csvFromStats(['Arquivo','Temp','Umidade/2','ITU','PM2.5x2','PM10','CO2/10'], visDS(), d=>[d.name, d.stats.temp.mean, d.stats.hum.mean/2, d.stats.itu.mean, d.stats.pm25.mean*2, d.stats.pm10.mean, d.stats.co2.mean/10]),
+  chartBox:          () => csvFromStats(['Arquivo','PM2.5 min','P25','Mediana','P75','Max','DP'], visDS(), d=>[d.name, d.stats.pm25.min, d.stats.pm25.p25, d.stats.pm25.p50, d.stats.pm25.p75, d.stats.pm25.max, d.stats.pm25.sd]),
+  chartHeatIdx:      () => csvFromHourly(['Hora','Heat Index medio'], r=>calcHeatIndex(r.temp,r.hum)),
+  chartHeatRisk:     () => csvFromStats(['Arquivo','% Confortavel','% Atencao','% Cuidado','% Perigo+'], visDS(), d=>[d.name, d.hiStats?.pct.safe, d.hiStats?.pct.caution, d.hiStats?.pct.danger, d.hiStats?.pct.extreme]),
+  chartDayPM:        () => csvFromDays(['Data','PM2.5 medio','PM2.5 DP','PM10 medio']),
+  chartDayTH:        () => csvFromDays(['Data','Temp media','Umidade media']),
+  chartDayHI:        () => csvFromDays(['Data','Heat Index medio','HI DP']),
+  chartGlobalHourPM: () => csvFromGlobalHour(['Hora','PM2.5 medio','PM2.5 DP','% acima Pad I']),
+  chartGlobalHourHI: () => csvFromGlobalHour(['Hora','Heat Index medio','HI DP']),
+  chartGlobalHourT:  () => csvFromGlobalHour(['Hora','Temp media','Temp DP','Umidade media']),
+};
+
+// CSV builder helpers
+function csvFromStats(headers, arr, rowFn) {
+  const rows = arr.map(rowFn);
+  return [headers, ...rows].map(r=>r.join(',')).join('\n');
+}
+
+function csvFromAllRows(headers) {
+  const vis = visDS();
+  const rows = [headers];
+  vis.forEach(ds => ds.rows.forEach(r => rows.push([r.DATE||r.time?.toISOString(), r.pm25, r.pm10, r.temp, r.hum, r.itu?.toFixed(2)].join(','))));
+  return rows.join('\n');
+}
+
+function csvFromHourly(headers, valFn, isPct=false) {
+  const vis = visDS();
+  const allRows = vis.flatMap(ds=>ds.rows);
+  const HOURS = Array.from({length:24},(_,i)=>i);
+  const rows = [headers];
+  HOURS.forEach(h => {
+    const hr = allRows.filter(r=>r.hour===h);
+    if (!hr.length) return;
+    if (Array.isArray(valFn(hr[0]))) {
+      const means = valFn(hr[0]).map((_,i) => (hr.reduce((s,r)=>s+valFn(r)[i],0)/hr.length).toFixed(2));
+      rows.push([h+'h', ...means].join(','));
+    } else if (isPct) {
+      rows.push([h+'h', (hr.filter(r=>valFn(r)).length/hr.length*100).toFixed(1)+'%'].join(','));
+    } else {
+      rows.push([h+'h', (hr.reduce((s,r)=>s+valFn(r),0)/hr.length).toFixed(2)].join(','));
+    }
+  });
+  return rows.join('\n');
+}
+
+function csvFromDays(headers) {
+  const vis = visDS();
+  const allRows = vis.flatMap(ds=>ds.rows);
+  const allDates = [...new Set(allRows.map(r=>{const d=r.time;return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()}))].sort();
+  const rows = [headers];
+  allDates.forEach(day => {
+    const dr = allRows.filter(r=>{const d=r.time;return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear()===day;});
+    if(!dr.length) return;
+    const m = arr => (arr.reduce((s,v)=>s+v,0)/arr.length);
+    const sd = (arr,mn) => Math.sqrt(arr.reduce((s,v)=>s+(v-mn)**2,0)/Math.max(arr.length-1,1));
+    const pm25v=dr.map(r=>r.pm25), hiv=dr.map(r=>calcHeatIndex(r.temp,r.hum));
+    const mpm=m(pm25v), mhi=m(hiv);
+    rows.push([day, mpm.toFixed(2), sd(pm25v,mpm).toFixed(2),
+      m(dr.map(r=>r.pm10)).toFixed(2),
+      m(dr.map(r=>r.temp)).toFixed(1), m(dr.map(r=>r.hum)).toFixed(1),
+      mhi.toFixed(1), sd(hiv,mhi).toFixed(1)].slice(0,headers.length).join(','));
+  });
+  return rows.join('\n');
+}
+
+function csvFromGlobalHour(headers) {
+  const vis = visDS();
+  const allRows = vis.flatMap(ds=>ds.rows);
+  const HOURS = Array.from({length:24},(_,i)=>i);
+  const rows = [headers];
+  HOURS.forEach(h => {
+    const hr = allRows.filter(r=>r.hour===h);
+    if (!hr.length) return;
+    const m = arr => arr.reduce((s,v)=>s+v,0)/arr.length;
+    const sd = (arr,mn) => Math.sqrt(arr.reduce((s,v)=>s+(v-mn)**2,0)/Math.max(arr.length-1,1));
+    const pm25v=hr.map(r=>r.pm25), hiv=hr.map(r=>calcHeatIndex(r.temp,r.hum)), tv=hr.map(r=>r.temp), hv=hr.map(r=>r.hum);
+    const mpm=m(pm25v), mhi=m(hiv), mt=m(tv);
+    rows.push([h+'h', mpm.toFixed(2), sd(pm25v,mpm).toFixed(2),
+      (hr.filter(r=>r.pm25>25).length/hr.length*100).toFixed(1)+'%',
+      mhi.toFixed(1), sd(hiv,mhi).toFixed(1),
+      mt.toFixed(1), sd(tv,mt).toFixed(1), m(hv).toFixed(1)].slice(0,headers.length).join(','));
+  });
+  return rows.join('\n');
+}
+
+function downloadCSV(content, filename) {
+  const bom = '\uFEFF'; // UTF-8 BOM for Excel
+  const blob = new Blob([bom+content], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function injectChartDownloadButtons() {
+  document.querySelectorAll('.chart-box').forEach(box => {
+    // Already has buttons?
+    if (box.querySelector('.chart-dl-bar')) return;
+    const canvas = box.querySelector('canvas');
+    if (!canvas) return;
+    const canvasId = canvas.id;
+    const hdr = box.querySelector('.chart-hdr');
+    if (!hdr) return;
+
+    // Get title text for filename
+    const titleEl = hdr.querySelector('.chart-title');
+    const title = (titleEl?.textContent||canvasId).trim().replace(/[^a-zA-Z0-9\-_ ]/g,'').replace(/\s+/g,'_').slice(0,40);
+
+    const bar = document.createElement('div');
+    bar.className = 'chart-dl-bar';
+
+    // PNG button
+    const pngBtn = document.createElement('button');
+    pngBtn.className = 'chart-dl-btn png';
+    pngBtn.innerHTML = '⬇ PNG';
+    pngBtn.title = 'Baixar grafico como imagem PNG';
+    pngBtn.onclick = () => {
+      // Draw white background then export
+      const c = document.getElementById(canvasId);
+      if (!c) return;
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = c.width; tempCanvas.height = c.height;
+      const ctx = tempCanvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+      ctx.drawImage(c, 0, 0);
+      const a = document.createElement('a');
+      a.download = title + '.png';
+      a.href = tempCanvas.toDataURL('image/png');
+      a.click();
+    };
+
+    // CSV button
+    const csvBtn = document.createElement('button');
+    csvBtn.className = 'chart-dl-btn csv';
+    csvBtn.innerHTML = '⬇ CSV';
+    csvBtn.title = 'Baixar dados do grafico como CSV';
+    csvBtn.onclick = () => {
+      const fn = CHART_CSV_MAP[canvasId];
+      if (fn) {
+        try { downloadCSV(fn(), title + '.csv'); }
+        catch(e) { showToast('Erro ao gerar CSV: '+e.message); }
+      } else {
+        showToast('CSV nao disponivel para este grafico.');
+      }
+    };
+
+    bar.appendChild(pngBtn);
+    bar.appendChild(csvBtn);
+    hdr.appendChild(bar);
+  });
 }
 
 </script>
