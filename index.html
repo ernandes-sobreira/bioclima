@@ -98,13 +98,24 @@ window.saveAnalysisToFirebase = async function(datasetsSnap) {
 };
 
 window.loadHistory = async function() {
+  const el = document.getElementById('historyList');
   try {
-    const { collection, getDocs, query, orderBy } = window._fbFns;
-    const snap = await getDocs(query(collection(db,'bioclima_analises'), orderBy('timestamp','desc')));
+    const { collection, getDocs } = window._fbFns;
+    // No orderBy to avoid requiring a Firestore composite index — sort in JS
+    const snap = await getDocs(collection(db,'bioclima_analises'));
     const hist = [];
     snap.forEach(doc => hist.push({id:doc.id,...doc.data()}));
+    // Sort descending by timestamp in JS
+    hist.sort((a,b) => {
+      const ta = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : 0;
+      const tb = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : 0;
+      return tb - ta;
+    });
     renderHistory(hist);
-  } catch(e) { console.warn('Historico:',e); }
+  } catch(e) {
+    console.warn('Historico Firebase:', e);
+    if (el) el.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:8px 0;">Historico indisponivel — verifique as regras do Firestore.</div>';
+  }
 };
 
 window.renderHistory = function(hist) {
@@ -923,51 +934,81 @@ function pmSt(v,i,ii) {
 // RUN ANALYSIS
 // ============================================================
 async function runAnalysis() {
-  document.getElementById('loadingDiv').style.display = 'block';
-  document.getElementById('results').style.display = 'none';
+  const loadingEl = document.getElementById('loadingDiv');
+  const resultsEl = document.getElementById('results');
+  loadingEl.style.display = 'block';
+  resultsEl.style.display = 'none';
   await new Promise(r=>setTimeout(r,30));
 
-  // parse time filter
-  let startH=null, endH=null;
-  if (document.getElementById('tfCheck').checked) {
-    const sv = document.getElementById('tfStart').value.split(':').map(Number);
-    const ev = document.getElementById('tfEnd').value.split(':').map(Number);
-    startH=sv; endH=ev;
-  }
+  try {
+    // parse time filter
+    let startH=null, endH=null;
+    if (document.getElementById('tfCheck').checked) {
+      const sv = document.getElementById('tfStart').value.split(':').map(Number);
+      const ev = document.getElementById('tfEnd').value.split(':').map(Number);
+      startH=sv; endH=ev;
+    }
 
-  datasets = [];
-  const keys = Object.keys(fileStore).map(Number).sort();
-  for (const k of keys) {
-    const file = fileStore[k];
-    // Read with latin1 to handle µ (\xb5) and ° (\xb0) from sensor exports
-    const text = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = e => resolve(e.target.result);
-      reader.onerror = reject;
-      reader.readAsText(file, 'windows-1252');
-    });
-    const rows = parseCSV(text, startH, endH);
-    if (!rows.length) continue;
-    const name = file.name.replace(/\.csv$/i,'');
-    const ds = { name, rows, rawText: text, color: C(datasets.length),
-      stats: {
-        pm25: stats(rows.map(r=>r.pm25)), pm10: stats(rows.map(r=>r.pm10)),
-        temp: stats(rows.map(r=>r.temp)), hum:  stats(rows.map(r=>r.hum)),
-        co2:  stats(rows.map(r=>r.co2)), hcho: stats(rows.map(r=>r.hcho)),
-        itu:  stats(rows.map(r=>r.itu)), thi:  stats(rows.map(r=>r.thi)),
-        wbgt: stats(rows.map(r=>r.wbgt)), st:  stats(rows.map(r=>r.st)),
+    datasets = [];
+    const keys = Object.keys(fileStore).map(Number).sort();
+    for (const k of keys) {
+      const file = fileStore[k];
+      let text;
+      try {
+        // Try windows-1252 first (sensor exports with µ and °)
+        text = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = e => resolve(e.target.result);
+          reader.onerror = reject;
+          reader.readAsText(file, 'windows-1252');
+        });
+      } catch(e) {
+        text = await file.text();
       }
-    };
-    datasets.push(ds);
+      const rows = parseCSV(text, startH, endH);
+      if (!rows.length) {
+        showToast('Arquivo "' + file.name + '" nao retornou dados. Verifique o formato.');
+        continue;
+      }
+      const name = file.name.replace(/\.csv$/i,'');
+      const ds = { name, rows, rawText: text, color: C(datasets.length),
+        stats: {
+          pm25: stats(rows.map(r=>r.pm25)), pm10: stats(rows.map(r=>r.pm10)),
+          temp: stats(rows.map(r=>r.temp)), hum:  stats(rows.map(r=>r.hum)),
+          co2:  stats(rows.map(r=>r.co2)), hcho: stats(rows.map(r=>r.hcho)),
+          itu:  stats(rows.map(r=>r.itu)), thi:  stats(rows.map(r=>r.thi)),
+          wbgt: stats(rows.map(r=>r.wbgt)), st:  stats(rows.map(r=>r.st)),
+        }
+      };
+      datasets.push(ds);
+    }
+
+    if (!datasets.length) {
+      showToast('Nenhum arquivo foi lido com sucesso. Verifique o formato CSV.');
+      loadingEl.style.display = 'none';
+      return;
+    }
+
+    destroyCharts();
+    try { renderSummary(); } catch(e) { console.error('renderSummary:', e); }
+    try { renderBioclima(); } catch(e) { console.error('renderBioclima:', e); }
+    try { renderAR(); } catch(e) { console.error('renderAR:', e); }
+    try { renderHourly(); } catch(e) { console.error('renderHourly:', e); }
+    try { renderSeries(); } catch(e) { console.error('renderSeries:', e); }
+    try { renderComparison(); } catch(e) { console.error('renderComparison:', e); }
+    try { renderTabelas(); } catch(e) { console.error('renderTabelas:', e); }
+
+    const fbBtn=document.getElementById('fbSaveBtn');
+    if(fbBtn) fbBtn.style.display='flex';
+
+    loadingEl.style.display = 'none';
+    resultsEl.style.display = 'block';
+
+  } catch(err) {
+    console.error('runAnalysis error:', err);
+    showToast('Erro ao processar: ' + err.message);
+    loadingEl.style.display = 'none';
   }
-
-  destroyCharts();
-  renderSummary();
-  const fbBtn=document.getElementById('fbSaveBtn'); if(fbBtn) fbBtn.style.display='flex'; renderBioclima(); renderAR();
-  renderHourly(); renderSeries(); renderComparison(); renderTabelas();
-
-  document.getElementById('loadingDiv').style.display = 'none';
-  document.getElementById('results').style.display = 'block';
 }
 
 // ============================================================
