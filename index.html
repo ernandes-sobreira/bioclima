@@ -1899,6 +1899,7 @@ function refreshChartVisibility() {
   if (charts.resumo) {
     charts.resumo.destroy();
     charts.resumo = new Chart(document.getElementById('chartResumo'), {
+      type:'bar',
       data:{ labels: vis.map(d=>d.name), datasets:[
         { type:'bar', label:'Temperatura (°C)', data:vis.map(d=>d.stats.temp.mean),
           backgroundColor:vis.map(d=>d.color.alpha.replace('0.18','0.85')), borderColor:vis.map(d=>d.color.solid),
@@ -2082,7 +2083,7 @@ function renderHeatIndex() {
         }
       },
       scales:{
-        y:{min:20, max:58, grid:{color:'#f5e8e0'},
+        y:{suggestedMin:20, suggestedMax:55, grid:{color:'#f5e8e0'},
           title:{display:true,text:'Heat Index (°C)',font:{size:11}}, ticks:{font:{size:11}}},
         x:{ticks:{font:{size:10}}}
       }
@@ -2212,8 +2213,8 @@ function renderByDay() {
   });
 
   // SD band dataset (fill between mean-sd and mean+sd)
-  const sdBand = (data, sdArr, color) => [
-    { data:data.map((v,i)=>v!==null&&sdArr[i]!==null?+(v-sdArr[i]).toFixed(2):null),
+  const sdBand = (data, sdArr, color, clampZero=false) => [
+    { data:data.map((v,i)=>v!==null&&sdArr[i]!==null?+(Math.max(clampZero?0:-9999, v-sdArr[i])).toFixed(2):null),
       borderColor:'transparent', backgroundColor:'transparent', pointRadius:0, fill:false, spanGaps:true, label:'_sdlo' },
     { data:data.map((v,i)=>v!==null&&sdArr[i]!==null?+(v+sdArr[i]).toFixed(2):null),
       borderColor:'transparent', backgroundColor:color, pointRadius:0, fill:'-1', spanGaps:true, label:'_sdhi' },
@@ -2230,7 +2231,7 @@ function renderByDay() {
     const pm25vals = ds.map(d=>d?.pm25??null);
     const pm25sds  = ds.map(d=>d?.pm25sd??null);
     pmDatasets = [
-      ...sdBand(pm25vals, pm25sds, PALETTE[0].alpha),
+      ...sdBand(pm25vals, pm25sds, PALETTE[0].alpha, true),
       { label:'PM2.5 ± DP', data:pm25vals, borderColor:PALETTE[0].solid, backgroundColor:'transparent', fill:false, borderWidth:2.5, pointRadius:5, pointBackgroundColor:PALETTE[0].solid, tension:0.3, spanGaps:true },
       limI, limII,
     ];
@@ -2253,7 +2254,7 @@ function renderByDay() {
         const vals = d.map(s=>s?.pm25??null);
         const sds  = d.map(s=>s?.pm25sd??null);
         return [
-          ...sdBand(vals, sds, ds.color.alpha),
+          ...sdBand(vals, sds, ds.color.alpha, true),
           { label:ds.name, data:vals, borderColor:ds.color.solid, backgroundColor:'transparent', fill:false, borderWidth:2.5, pointRadius:5, pointBackgroundColor:ds.color.solid, tension:0.3, spanGaps:true },
         ];
       }),
@@ -2276,7 +2277,7 @@ function renderByDay() {
   charts.dayPM = new Chart(document.getElementById('chartDayPM'), {
     type:'line', data:{labels:allDates, datasets:pmDatasets},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{y:{beginAtZero:true,suggestedMax:30,grid:{color:'#f5e8e0'},title:{display:true,text:'PM2.5 (µg/m³)',font:{size:11}},ticks:{font:{size:11}}},x:{ticks:{font:{size:11}}}}}
+      scales:{y:{min:0,suggestedMax:30,grid:{color:'#f5e8e0'},title:{display:true,text:'PM2.5 (µg/m³)',font:{size:11}},ticks:{font:{size:11}}},x:{ticks:{font:{size:11}}}}}
   });
 
   const thOpts = {
@@ -2293,7 +2294,7 @@ function renderByDay() {
     delete thOpts.scales.y2;
     thOpts.scales.y.title.text = 'Temperatura (°C)';
   }
-  charts.dayTH = new Chart(document.getElementById('chartDayTH'), {data:{labels:allDates,datasets:thDatasets},options:thOpts});
+  charts.dayTH = new Chart(document.getElementById('chartDayTH'), {type:'line',data:{labels:allDates,datasets:thDatasets},options:thOpts});
 
   charts.dayHI = new Chart(document.getElementById('chartDayHI'), {
     type:dayMode==='agg'?'bar':'line',
@@ -2358,8 +2359,8 @@ function renderByHour() {
     };
   });
 
-  const sdBand = (data,sdArr,color) => [
-    {data:data.map((v,i)=>v!==null&&sdArr[i]!==null?+(v-sdArr[i]).toFixed(2):null), borderColor:'transparent',backgroundColor:'transparent',pointRadius:0,fill:false,spanGaps:true,label:'_sdlo'},
+  const sdBand = (data,sdArr,color,clampZero=false) => [
+    {data:data.map((v,i)=>v!==null&&sdArr[i]!==null?+(Math.max(clampZero?0:-9999,v-sdArr[i])).toFixed(2):null), borderColor:'transparent',backgroundColor:'transparent',pointRadius:0,fill:false,spanGaps:true,label:'_sdlo'},
     {data:data.map((v,i)=>v!==null&&sdArr[i]!==null?+(v+sdArr[i]).toFixed(2):null), borderColor:'transparent',backgroundColor:color,pointRadius:0,fill:'-1',spanGaps:true,label:'_sdhi'},
   ];
 
@@ -2376,7 +2377,7 @@ function renderByHour() {
     const allRows=vis.flatMap(ds=>ds.rows);
     const hs=hourlyStats(allRows);
     const pm25v=hs.map(s=>s?.pm25??null), pm25sds=hs.map(s=>s?.pm25sd??null);
-    pmDatasets=[...sdBand(pm25v,pm25sds,PALETTE[0].alpha),
+    pmDatasets=[...sdBand(pm25v,pm25sds,PALETTE[0].alpha,true),
       {label:'PM2.5 ± DP', data:pm25v, borderColor:PALETTE[0].solid,backgroundColor:'transparent',fill:false,borderWidth:2.5,pointRadius:4,pointBackgroundColor:PALETTE[0].solid,tension:0.4,spanGaps:true},
       limI,limII];
     hiDatasets=[{label:'Heat Index',data:hs.map(s=>s?.hi??null),backgroundColor:hs.map(s=>s?hiClass(s.hi).color+'aa':'transparent'),borderColor:hs.map(s=>s?hiClass(s.hi).color:'transparent'),borderWidth:2,borderRadius:4}];
@@ -2392,7 +2393,7 @@ function renderByHour() {
       ...vis.flatMap(ds=>{
         const hs=hourlyStats(ds.rows);
         const vals=hs.map(s=>s?.pm25??null),sds=hs.map(s=>s?.pm25sd??null);
-        return [...sdBand(vals,sds,ds.color.alpha),
+        return [...sdBand(vals,sds,ds.color.alpha,true),
           {label:ds.name,data:vals,borderColor:ds.color.solid,backgroundColor:'transparent',fill:false,borderWidth:2.5,pointRadius:4,pointBackgroundColor:ds.color.solid,tension:0.4,spanGaps:true}];
       }),limI,limII];
     hiDatasets=vis.map(ds=>{const hs=hourlyStats(ds.rows);return{label:ds.name,data:hs.map(s=>s?.hi??null),borderColor:ds.color.solid,backgroundColor:ds.color.alpha,borderWidth:2.5,pointRadius:4,fill:false,tension:0.4,spanGaps:true};});
@@ -2407,7 +2408,7 @@ function renderByHour() {
         const hs=hourlyStats(dayRows);
         const c=PALETTE[i%PALETTE.length];
         const vals=hs.map(s=>s?.pm25??null),sds=hs.map(s=>s?.pm25sd??null);
-        return [...sdBand(vals,sds,c.alpha),
+        return [...sdBand(vals,sds,c.alpha,true),
           {label:day,data:vals,borderColor:c.solid,backgroundColor:'transparent',fill:false,borderWidth:2.5,pointRadius:4,pointBackgroundColor:c.solid,tension:0.4,spanGaps:true}];
       }).flat(),limI,limII];
     hiDatasets=allDates.map((day,i)=>{
@@ -2429,7 +2430,7 @@ function renderByHour() {
   charts.globalHourPM=new Chart(document.getElementById('chartGlobalHourPM'),{
     type:'line',data:{labels:hlabels,datasets:pmDatasets},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{y:{beginAtZero:true,suggestedMax:30,grid:{color:'#f5e8e0'},title:{display:true,text:'PM2.5 (µg/m³)',font:{size:11}},ticks:{font:{size:11}}},x:{ticks:{font:{size:10}}}}}
+      scales:{y:{min:0,suggestedMax:30,grid:{color:'#f5e8e0'},title:{display:true,text:'PM2.5 (µg/m³)',font:{size:11}},ticks:{font:{size:11}}},x:{ticks:{font:{size:10}}}}}
   });
 
   charts.globalHourHI=new Chart(document.getElementById('chartGlobalHourHI'),{
@@ -2438,14 +2439,14 @@ function renderByHour() {
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:hourMode!=='agg',position:'top'},
         annotation:{annotations:{a27:{type:'line',yMin:27,yMax:27,borderColor:'rgba(243,156,18,0.6)',borderDash:[5,4],borderWidth:1.5},a33:{type:'line',yMin:33,yMax:33,borderColor:'rgba(230,126,34,0.7)',borderDash:[5,4],borderWidth:1.5},a42:{type:'line',yMin:42,yMax:42,borderColor:'rgba(231,76,60,0.7)',borderDash:[5,4],borderWidth:1.5}}}},
-      scales:{y:{suggestedMin:20,suggestedMax:50,grid:{color:'#f5e8e0'},title:{display:true,text:'Heat Index (°C)',font:{size:11}},ticks:{font:{size:11}}},x:{ticks:{font:{size:10}}}}}
+      scales:{y:{suggestedMin:20,suggestedMax:55,grid:{color:'#f5e8e0'},title:{display:true,text:'Heat Index (°C)',font:{size:11}},ticks:{font:{size:11}}},x:{ticks:{font:{size:10}}}}}
   });
 
   // Temp chart — always line for sep/day, bar+line for agg
   const tOpts={responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top'}},
     scales:{y:{grid:{color:'#f5e8e0'},title:{display:true,text:'Temperatura (°C)',font:{size:11}},ticks:{font:{size:11}}},x:{ticks:{font:{size:10}}}}};
   if(hourMode==='agg') tOpts.scales.y2={position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'Umidade (%)',font:{size:11}},ticks:{font:{size:11}}};
-  charts.globalHourT=new Chart(document.getElementById('chartGlobalHourT'),{data:{labels:hlabels,datasets:tDatasets},options:tOpts});
+  charts.globalHourT=new Chart(document.getElementById('chartGlobalHourT'),{type:'line',data:{labels:hlabels,datasets:tDatasets},options:tOpts});
 
   // Table (always shows aggregate)
   const allRows=vis.flatMap(ds=>ds.rows);
