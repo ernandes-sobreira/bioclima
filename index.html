@@ -8,6 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/luxon/3.4.4/luxon.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
@@ -1312,8 +1313,8 @@ function renderAR() {
 
   makeLegend('legendPM', [
     ...datasets.map(ds=>({ label:`PM2.5 — ${ds.name}`, color:ds.color.solid })),
-    { label:'Limite Padrao I (25)', color:'#c0392b', line:true },
-    { label:'Limite Padrao II (20)', color:'#e67e22', line:true },
+    { label:'Limite Padrão I (25 µg/m³)', color:'#c0392b', line:true },
+    { label:'Limite Padrão II (20 µg/m³)', color:'#e67e22', line:true },
   ]);
 
   charts.pm = new Chart(document.getElementById('chartPM'), {
@@ -1325,6 +1326,12 @@ function renderAR() {
           backgroundColor:datasets.map(d=>d.color.solid+'cc'), borderColor:datasets.map(d=>d.color.solid), borderWidth:2, borderRadius:5 },
         { label:'PM10 (µg/m³)', data:datasets.map(d=>d.stats.pm10.mean),
           backgroundColor:datasets.map(d=>d.color.alpha.replace('0.18','0.5')), borderColor:datasets.map(d=>d.color.solid), borderWidth:2, borderRadius:5, borderDash:[4,4] },
+        { label:'Limite Padrão I (25 µg/m³)', data:datasets.map(()=>PM25_I),
+          type:'line', borderColor:'#c0392b', borderDash:[7,4], borderWidth:2.5,
+          pointRadius:0, backgroundColor:'transparent', order:0 },
+        { label:'Limite Padrão II (20 µg/m³)', data:datasets.map(()=>PM25_II),
+          type:'line', borderColor:'#e67e22', borderDash:[7,4], borderWidth:2.5,
+          pointRadius:0, backgroundColor:'transparent', order:0 },
       ]
     },
     options:{
@@ -1906,6 +1913,12 @@ function refreshChartVisibility() {
           backgroundColor:vis.map(d=>d.color.solid+'cc'), borderColor:vis.map(d=>d.color.solid), borderWidth:2, borderRadius:5 },
         { label:'PM10 (µg/m³)', data:vis.map(d=>d.stats.pm10.mean),
           backgroundColor:vis.map(d=>d.color.alpha.replace('0.18','0.5')), borderColor:vis.map(d=>d.color.solid), borderWidth:2, borderRadius:5 },
+        { label:'Limite Padrão I (25)', data:vis.map(()=>PM25_I),
+          type:'line', borderColor:'#c0392b', borderDash:[7,4], borderWidth:2.5,
+          pointRadius:0, backgroundColor:'transparent', order:0 },
+        { label:'Limite Padrão II (20)', data:vis.map(()=>PM25_II),
+          type:'line', borderColor:'#e67e22', borderDash:[7,4], borderWidth:2.5,
+          pointRadius:0, backgroundColor:'transparent', order:0 },
       ]},
       options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false},
         annotation:{ annotations:{
