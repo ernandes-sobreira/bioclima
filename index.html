@@ -1360,10 +1360,10 @@ function renderHourly() {
     type:'line',
     data:{
       labels: HOURS.map(h=>h+'h'),
-      datasets: datasets.map(ds => {
+      datasets: datasets.map((ds,_dsi) => {
         const fRows = filterByPeriod(ds.rows);
         return {
-          label: ds.name,
+          label: ds.name, _dsIndex: _dsi,
           data: HOURS.map(h => {
             const hr = fRows.filter(r=>r.hour===h);
             return hr.length ? +(hr.reduce((s,r)=>s+r.pm25,0)/hr.length).toFixed(2) : null;
@@ -1429,10 +1429,10 @@ function renderHourly() {
     data:{
       labels: HOURS.map(h=>h+'h'),
       datasets: [
-        ...datasets.map(ds => {
+        ...datasets.map((ds,_dsi) => {
           const fRows = filterByPeriod(ds.rows);
           return {
-            label: 'Temp '+ds.name,
+            label: 'Temp '+ds.name, _dsIndex: _dsi,
             data: HOURS.map(h => {
               const hr = fRows.filter(r=>r.hour===h);
               return hr.length ? +(hr.reduce((s,r)=>s+r.temp,0)/hr.length).toFixed(1) : null;
@@ -1441,10 +1441,10 @@ function renderHourly() {
             borderWidth:2, pointRadius:3, tension:0.4, spanGaps:true, yAxisID:'y'
           };
         }),
-        ...datasets.map(ds => {
+        ...datasets.map((ds,_dsi) => {
           const fRows = filterByPeriod(ds.rows);
           return {
-            label: 'Umidade '+ds.name,
+            label: 'Umidade '+ds.name, _dsIndex: _dsi,
             data: HOURS.map(h => {
               const hr = fRows.filter(r=>r.hour===h);
               return hr.length ? +(hr.reduce((s,r)=>s+r.hum,0)/hr.length).toFixed(1) : null;
@@ -1518,7 +1518,7 @@ function renderSeries() {
       data = s.map(r => ({ x: r.time, y: key==='itu'?r.itu:r[key] }));
     }
     return {
-      label: ds.name,
+      label: ds.name, _dsIndex: dsIdx,
       data,
       borderColor: ds.color.solid,
       backgroundColor: 'transparent',
@@ -1781,22 +1781,134 @@ function toggleDS(i) {
 function visDS() { return datasets.filter((_,i)=>visibleDS.has(i)); }
 
 function refreshChartVisibility() {
-  const allCharts = [charts.resumo, charts.itc, charts.pm, charts.pmDist,
-    charts.radar, charts.box, charts.series, charts.hourlyPM, charts.hourlyPct,
-    charts.hourlyTH, charts.heatIdx, charts.heatRisk];
-  allCharts.forEach(ch => {
+  // Line charts: use _dsIndex to show/hide individual dataset lines
+  const lineCharts = [charts.series, charts.hourlyPM, charts.hourlyPct,
+    charts.hourlyTH, charts.heatIdx, charts.radar];
+  lineCharts.forEach(ch => {
     if (!ch) return;
     ch.data.datasets.forEach(ds => {
-      if (!ds.label || ds.label.startsWith('_') || ds.label.startsWith('Limite') ||
-          ds.label.startsWith('Confort') || ds.label.startsWith('Aten') ||
-          ds.label.startsWith('Perigo') || ds.label.startsWith('Padrao') ||
-          ds.label.startsWith('PM2') || ds.label.startsWith('PM10') || ds.label.startsWith('Dentro') ||
-          ds.label.startsWith('Entre') || ds.label.startsWith('Acima')) return;
-      const dsIdx = datasets.findIndex(d => ds.label.includes(d.name) || d.name.includes(ds.label));
-      if (dsIdx >= 0) ds.hidden = !visibleDS.has(dsIdx);
+      if (ds._dsIndex !== undefined) ds.hidden = !visibleDS.has(ds._dsIndex);
     });
     ch.update('none');
   });
+
+  // Bar charts with array data: rebuild with filtered datasets
+  const vis = visDS();
+  const rebuildBar = (ch, buildFn) => { if (ch) { ch.destroy(); } return buildFn(vis); };
+
+  // Rebuild ITC
+  if (charts.itc) {
+    charts.itc.destroy();
+    charts.itc = new Chart(document.getElementById('chartITC'), {
+      type:'bar',
+      data:{ labels: vis.map(d=>d.name), datasets:[
+        { label:'ITU',  data:vis.map(d=>d.stats.itu.mean),  backgroundColor:PALETTE[0].alpha.replace('0.18','0.85'), borderColor:PALETTE[0].solid, borderWidth:2, borderRadius:5 },
+        { label:'THI',  data:vis.map(d=>d.stats.thi.mean),  backgroundColor:PALETTE[1].alpha.replace('0.18','0.85'), borderColor:PALETTE[1].solid, borderWidth:2, borderRadius:5 },
+        { label:'WBGT', data:vis.map(d=>d.stats.wbgt.mean), backgroundColor:PALETTE[2].alpha.replace('0.18','0.85'), borderColor:PALETTE[2].solid, borderWidth:2, borderRadius:5 },
+      ]},
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+        scales:{ y:{grid:{color:'#f5e8e0'},ticks:{font:{size:11}}}, x:{ticks:{font:{size:11}}} } }
+    });
+  }
+
+  // Rebuild Resumo
+  if (charts.resumo) {
+    charts.resumo.destroy();
+    charts.resumo = new Chart(document.getElementById('chartResumo'), {
+      data:{ labels: vis.map(d=>d.name), datasets:[
+        { type:'bar', label:'Temperatura (°C)', data:vis.map(d=>d.stats.temp.mean),
+          backgroundColor:vis.map(d=>d.color.alpha.replace('0.18','0.85')), borderColor:vis.map(d=>d.color.solid),
+          borderWidth:2, borderRadius:6, yAxisID:'y' },
+        { type:'line', label:'Umidade (%)', data:vis.map(d=>d.stats.hum.mean),
+          borderColor:'#c0392b', backgroundColor:'transparent', borderWidth:2, pointRadius:6,
+          pointBackgroundColor:'#c0392b', tension:0.4, yAxisID:'y2' }
+      ]},
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+        scales:{
+          y:{grid:{color:'#f5e8e0'}, ticks:{font:{size:11}}, title:{display:true,text:'Temperatura (°C)',font:{size:11}}},
+          y2:{position:'right', grid:{drawOnChartArea:false}, ticks:{font:{size:11}}, title:{display:true,text:'Umidade (%)',font:{size:11}}},
+          x:{ticks:{font:{size:11}}}
+        }}
+    });
+  }
+
+  // Rebuild PM
+  if (charts.pm) {
+    charts.pm.destroy();
+    charts.pm = new Chart(document.getElementById('chartPM'), {
+      type:'bar',
+      data:{ labels: vis.map(d=>d.name), datasets:[
+        { label:'PM2.5 (µg/m³)', data:vis.map(d=>d.stats.pm25.mean),
+          backgroundColor:vis.map(d=>d.color.solid+'cc'), borderColor:vis.map(d=>d.color.solid), borderWidth:2, borderRadius:5 },
+        { label:'PM10 (µg/m³)', data:vis.map(d=>d.stats.pm10.mean),
+          backgroundColor:vis.map(d=>d.color.alpha.replace('0.18','0.5')), borderColor:vis.map(d=>d.color.solid), borderWidth:2, borderRadius:5 },
+      ]},
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{display:false},
+        annotation:{ annotations:{
+          li1:{type:'line',yMin:PM25_I,yMax:PM25_I,borderColor:'#c0392b',borderWidth:2,borderDash:[6,4],
+            label:{content:'CONAMA Padrão I (25)',display:true,position:'start',backgroundColor:'#fdecea',color:'#c0392b',font:{size:10}}},
+          li2:{type:'line',yMin:PM25_II,yMax:PM25_II,borderColor:'#e67e22',borderWidth:2,borderDash:[6,4],
+            label:{content:'CONAMA Padrão II (20)',display:true,position:'end',backgroundColor:'#fef0e0',color:'#e67e22',font:{size:10}}}
+        }}},
+        scales:{ y:{beginAtZero:true,suggestedMax:30,grid:{color:'#f5e8e0'},ticks:{font:{size:11}},title:{display:true,text:'µg/m³',font:{size:11}}}, x:{ticks:{font:{size:11}}} }
+      }
+    });
+  }
+
+  // Rebuild PMDist
+  if (charts.pmDist) {
+    charts.pmDist.destroy();
+    const pmCats = vis.map(ds => {
+      const g=ds.rows.filter(r=>r.pm25<=PM25_II).length;
+      const m=ds.rows.filter(r=>r.pm25>PM25_II&&r.pm25<=PM25_I).length;
+      const b=ds.rows.filter(r=>r.pm25>PM25_I).length;
+      return [g,m,b];
+    });
+    charts.pmDist = new Chart(document.getElementById('chartPMDist'), {
+      type:'bar',
+      data:{ labels:vis.map(d=>d.name), datasets:[
+        {label:'Dentro Padrão II (≤20)', data:pmCats.map(d=>d[0]), backgroundColor:'#d35400cc', borderColor:'#d35400', borderWidth:2, borderRadius:3},
+        {label:'Entre Padrão I e II (20–25)', data:pmCats.map(d=>d[1]), backgroundColor:'#e67e22cc', borderColor:'#e67e22', borderWidth:2, borderRadius:3},
+        {label:'Acima Padrão I (>25)', data:pmCats.map(d=>d[2]), backgroundColor:'#c0392bcc', borderColor:'#c0392b', borderWidth:2, borderRadius:3},
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+        scales:{x:{stacked:true,ticks:{font:{size:11}}},y:{stacked:true,grid:{color:'#f5e8e0'},title:{display:true,text:'N° de medicoes',font:{size:11}},ticks:{font:{size:11}}}}}
+    });
+  }
+
+  // Rebuild box
+  if (charts.box) {
+    charts.box.destroy();
+    charts.box = new Chart(document.getElementById('chartBox'), {
+      type:'bar',
+      data:{ labels:vis.map(d=>d.name), datasets:[
+        {label:'Min', data:vis.map(d=>d.stats.pm25.min), backgroundColor:'transparent', borderColor:'transparent', stack:'b'},
+        {label:'P25–P75 (IQR)', data:vis.map(d=>d.stats.pm25.p75-d.stats.pm25.p25), backgroundColor:'#d35400cc', borderColor:'#d35400', borderWidth:2, stack:'b'},
+        {label:'P75–Max', data:vis.map(d=>d.stats.pm25.max-d.stats.pm25.p75), backgroundColor:'#e67e2266', borderColor:'#e67e22', borderWidth:1, stack:'b'},
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+        scales:{x:{stacked:true,ticks:{font:{size:11}}},y:{stacked:true,grid:{color:'#f5e8e0'},title:{display:true,text:'PM2.5 (µg/m³)',font:{size:11}},ticks:{font:{size:11}}}}}
+    });
+  }
+
+  // Rebuild heatRisk
+  if (charts.heatRisk) {
+    charts.heatRisk.destroy();
+    charts.heatRisk = new Chart(document.getElementById('chartHeatRisk'), {
+      type:'bar',
+      data:{ labels:vis.map(d=>d.name), datasets:[
+        {label:'Confortável (<27°C)', data:vis.map(d=>d.hiStats?.pct.safe||0),    backgroundColor:'rgba(39,174,96,0.75)',  borderColor:'#27ae60', borderWidth:2, borderRadius:3},
+        {label:'Atenção (27-33°C)',   data:vis.map(d=>d.hiStats?.pct.caution||0), backgroundColor:'rgba(243,156,18,0.75)', borderColor:'#f39c12', borderWidth:2, borderRadius:3},
+        {label:'Cuidado (33-42°C)',   data:vis.map(d=>d.hiStats?.pct.danger||0),  backgroundColor:'rgba(230,126,34,0.75)', borderColor:'#e67e22', borderWidth:2, borderRadius:3},
+        {label:'Perigo+ (>42°C)',     data:vis.map(d=>d.hiStats?.pct.extreme||0), backgroundColor:'rgba(231,76,60,0.75)',  borderColor:'#e74c3c', borderWidth:2, borderRadius:3},
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+        scales:{x:{stacked:true,ticks:{font:{size:11}}},y:{stacked:true,max:100,grid:{color:'#f5e8e0'},title:{display:true,text:'% do período',font:{size:11}},ticks:{font:{size:11},callback:v=>v+'%'}}}}
+    });
+  }
+
+  // Rebuild comparison table
+  try { renderComparison(); } catch(e) {}
 }
 
 // ============================================================
@@ -1852,7 +1964,7 @@ function renderHeatIndex() {
         {label:'Cuidado 33°C',  data:HOURS.map(()=>33), borderColor:'rgba(230,126,34,0.7)', borderDash:[5,4], borderWidth:1.5, pointRadius:0, backgroundColor:'transparent'},
         {label:'Perigo 42°C',   data:HOURS.map(()=>42), borderColor:'rgba(231,76,60,0.8)',  borderDash:[5,4], borderWidth:1.5, pointRadius:0, backgroundColor:'transparent'},
         ...datasets.map((ds,i) => ({
-          label: ds.name,
+          label: ds.name, _dsIndex: i,
           data: HOURS.map(h => {
             const hr = ds.rows.filter(r=>r.hour===h);
             return hr.length ? +(hr.reduce((s,r)=>s+r.hi,0)/hr.length).toFixed(1) : null;
